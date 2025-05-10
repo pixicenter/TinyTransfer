@@ -25,7 +25,8 @@ const PROTECTED_ROUTES = [
   '/api/send-email',
   '/api/transfers',
   '/api/upload/initialize',
-  '/api/upload/batch'
+  '/api/upload/batch',
+  '/api/upload/status'
 ];
 
 export async function middleware(request: NextRequest) {

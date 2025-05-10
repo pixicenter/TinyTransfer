@@ -126,6 +126,22 @@ export async function POST(req: NextRequest) {
     // Actualizează contorul de fișiere încărcate
     metadata.uploadedFileCount = metadata.files.length;
     
+    // Verifică numărul real de fișiere din director
+    const filesInDirectory = fs.readdirSync(transferDir)
+      .filter(filename => filename !== 'metadata.json');
+    
+    // Dacă numărul de fișiere din director este diferit de cel din metadata, actualizăm
+    if (filesInDirectory.length !== metadata.uploadedFileCount) {
+      console.log(`Corecție uploadedFileCount: ${metadata.uploadedFileCount} -> ${filesInDirectory.length} (bazat pe fișierele din director)`);
+      metadata.uploadedFileCount = filesInDirectory.length;
+    }
+    
+    // Verificăm dacă numărul depășește fileCount și ajustăm corespunzător
+    if (metadata.uploadedFileCount > metadata.fileCount) {
+      console.log(`Ajustare fileCount: ${metadata.fileCount} -> ${metadata.uploadedFileCount}`);
+      metadata.fileCount = metadata.uploadedFileCount;
+    }
+    
     // Salvează metadata actualizat
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
     

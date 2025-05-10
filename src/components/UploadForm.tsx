@@ -17,6 +17,16 @@ interface StageProgress {
   completing: number;
 }
 
+// Setările pentru configurarea încărcărilor
+const UPLOAD_SETTINGS = {
+  // Numărul maxim de fișiere per lot
+  MAX_BATCH_SIZE: 5,
+  // Numărul maxim de cereri paralele (conexiuni simultane)
+  MAX_CONCURRENT_REQUESTS: 4,
+  // Activează raportarea detaliată a progresului
+  DETAILED_PROGRESS: true
+};
+
 export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const { t, locale } = useLocale();
   const { settings } = useSettings();
@@ -34,6 +44,10 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [processedFiles, setProcessedFiles] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadSpeed, setUploadSpeed] = useState<string | null>(null);
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string | null>(null);
+  const [canForceFinalize, setCanForceFinalize] = useState(false);
+  const [uploadError, setUploadError] = useState<{ message: string, uploadedFiles?: number, expectedFiles?: number } | null>(null);
   
   // Progresul pentru fiecare etapă
   const [stageProgress, setStageProgress] = useState<StageProgress>({
@@ -52,6 +66,8 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadStartTimeRef = useRef<number | null>(null);
+  const totalUploadSizeRef = useRef<number>(0);
 
   // Check if the password is required (when encryption is enabled and the key source is "password")
   const isPasswordRequired = settings.encryption_enabled && settings.encryption_key_source === 'password';
@@ -95,6 +111,44 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     }
   }, [selectedFiles, t]);
 
+  // Actualizează timpul estimat rămas când progresul se schimbă
+  useEffect(() => {
+    if (isUploading && uploadStage === 'uploading' && uploadStartTimeRef.current && processedFiles > 0) {
+      const elapsedTime = (Date.now() - uploadStartTimeRef.current) / 1000; // în secunde
+      const processedSize = totalUploadSizeRef.current * (processedFiles / totalFiles);
+      
+      // Calculează viteza în bytes per secundă
+      const speedBps = processedSize / elapsedTime;
+      const remainingSize = totalUploadSizeRef.current - processedSize;
+      
+      // Calculează timpul estimat rămas în secunde
+      const estimatedSecondsRemaining = remainingSize / speedBps;
+      
+      // Formatează viteza pentru afișare
+      let speedDisplay = '';
+      if (speedBps < 1024) {
+        speedDisplay = `${speedBps.toFixed(1)} B/s`;
+      } else if (speedBps < 1024 * 1024) {
+        speedDisplay = `${(speedBps / 1024).toFixed(1)} KB/s`;
+      } else {
+        speedDisplay = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+      }
+      
+      // Formatează timpul pentru afișare
+      let timeDisplay = '';
+      if (estimatedSecondsRemaining < 60) {
+        timeDisplay = `${Math.round(estimatedSecondsRemaining)}s`;
+      } else if (estimatedSecondsRemaining < 3600) {
+        timeDisplay = `${Math.floor(estimatedSecondsRemaining / 60)}m ${Math.round(estimatedSecondsRemaining % 60)}s`;
+      } else {
+        timeDisplay = `${Math.floor(estimatedSecondsRemaining / 3600)}h ${Math.floor((estimatedSecondsRemaining % 3600) / 60)}m`;
+      }
+      
+      setUploadSpeed(speedDisplay);
+      setEstimatedTimeRemaining(timeDisplay);
+    }
+  }, [processedFiles, isUploading, uploadStage, totalFiles]);
+  
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
@@ -135,6 +189,39 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
+  
+  // Funcție pentru a încărca un lot de fișiere
+  const uploadBatch = async (transferId: string, batchFiles: File[]): Promise<number> => {
+    const batchData = new FormData();
+    
+    // Adaugă ID-ul transferului
+    batchData.append('transferId', transferId);
+    
+    // Adaugă fișierele din acest lot
+    for (const file of batchFiles) {
+      batchData.append('files', file);
+    }
+    
+    // Upload the batch
+    const batchResponse = await fetch(`/api/upload/batch`, {
+      method: 'POST',
+      body: batchData,
+    });
+    
+    if (!batchResponse.ok) {
+      throw new Error(`Failed to upload batch: ${batchResponse.statusText}`);
+    }
+    
+    const batchResult = await batchResponse.json();
+    
+    // Folosim numărul real de fișiere procesate din răspunsul API-ului
+    if (batchResult.processedFiles !== undefined) {
+      return batchResult.processedFiles;
+    }
+    
+    // Cădem înapoi la lungimea lotului dacă răspunsul nu conține processedFiles
+    return batchFiles.length;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,6 +259,10 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     setProcessedFiles(0);
     setTotalFiles(selectedFiles.length);
     
+    // Inițializează timpul de start și dimensiunea totală
+    uploadStartTimeRef.current = Date.now();
+    totalUploadSizeRef.current = getTotalSize();
+    
     try {
       // Create a new FormData object
       const formData = new FormData();
@@ -191,9 +282,9 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         formData.append('localEncryptionKeySource', localEncryptionKeySource);
       }
       
-      // Add files in chunks of 10 to prevent memory issues with huge uploads
-      const MAX_BATCH_SIZE = 50;
-      const totalBatches = Math.ceil(selectedFiles.length / MAX_BATCH_SIZE);
+      // Configurare pentru încărcarea în loturi
+      const MAX_BATCH_SIZE = UPLOAD_SETTINGS.MAX_BATCH_SIZE;
+      const MAX_CONCURRENT_REQUESTS = UPLOAD_SETTINGS.MAX_CONCURRENT_REQUESTS;
       
       let transferId: string | null = null;
       let uploadedFiles = 0;
@@ -226,47 +317,218 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       const initData = await initResponse.json();
       transferId = initData.transferId;
       
-      // Upload files in batches
+      if (!transferId) {
+        throw new Error('ID-ul transferului nu a fost generat corect');
+      }
+      
+      // Salvează ID-ul transferului în localStorage pentru a-l putea folosi la forțarea finalizării
+      localStorage.setItem('lastTransferId', transferId);
+      
+      // Pregătește loturi de fișiere
+      const batches: File[][] = [];
       for (let i = 0; i < selectedFiles.length; i += MAX_BATCH_SIZE) {
-        const batch = selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length));
-        const batchData = new FormData();
+        batches.push(selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length)));
+      }
+      
+      // Funcție pentru procesarea loturilor în paralel, limitând numărul de cereri simultane
+      const processAllBatches = async () => {
+        const results = [];
         
-        // Add the transfer ID to each batch
-        if (transferId) {
-          batchData.append('transferId', transferId);
-        } else {
-          throw new Error('ID-ul transferului nu a fost generat corect');
+        // Pregătește loturi de indecși pentru procesare
+        const batchIndices = batches.map((_, index) => index);
+        
+        // Procesează loturile în grupuri paralele până când toate sunt complete
+        while (batchIndices.length > 0) {
+          // Ia următorul set de indecși pentru procesare paralelă
+          const currentBatchIndices = batchIndices.splice(0, MAX_CONCURRENT_REQUESTS);
+          
+          // Procesează acest set de loturi în paralel
+          const currentPromises = currentBatchIndices.map(index => 
+            uploadBatch(transferId!, batches[index])
+              .then(filesProcessed => {
+                // Actualizează progresul după fiecare lot
+                uploadedFiles += filesProcessed;
+                setProcessedFiles(uploadedFiles);
+                
+                // Actualizare progres pentru etapa de upload
+                const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
+                updateStageProgress('uploading', uploadingProgress);
+                
+                return filesProcessed;
+              })
+          );
+          
+          // Așteaptă ca toate loturile din acest grup să fie procesate
+          const currentResults = await Promise.all(currentPromises);
+          results.push(...currentResults);
         }
         
-        // Add batch files
-        for (const file of batch) {
-          batchData.append('files', file);
-        }
-        
-        // Upload the batch
-        const batchResponse = await fetch(`/api/upload/batch`, {
+        return results;
+      };
+      
+      // Procesează toate loturile
+      await processAllBatches();
+      
+      // Verificăm starea finală a transferului pentru a asigura actualizarea corectă a contorului
+      try {
+        const statusResponse = await fetch(`/api/upload/status`, {
           method: 'POST',
-          body: batchData,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transferId
+          }),
         });
         
-        if (!batchResponse.ok) {
-          throw new Error(`Failed to upload batch: ${batchResponse.statusText}`);
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          if (statusData.uploadedFileCount && statusData.uploadedFileCount !== uploadedFiles) {
+            console.log(`Actualizare contor fișiere procesate: ${uploadedFiles} -> ${statusData.uploadedFileCount}`);
+            uploadedFiles = statusData.uploadedFileCount;
+            setProcessedFiles(uploadedFiles);
+            
+            const uploadingProgress = Math.min(100, Math.round((uploadedFiles / selectedFiles.length) * 100));
+            updateStageProgress('uploading', uploadingProgress);
+          }
         }
-        
-        const batchResult = await batchResponse.json();
-        
-        // Update progress with real data
-        uploadedFiles += batch.length;
-        setProcessedFiles(uploadedFiles);
-        
-        // Actualizare progres pentru etapa de upload
-        const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
-        updateStageProgress('uploading', uploadingProgress);
+      } catch (error) {
+        console.warn('Nu s-a putut verifica starea transferului:', error);
       }
       
       // Etapa de arhivare
       setUploadStage('archiving');
       updateStageProgress('archiving', 10); // Inițial 10% progres pentru arhivare
+      
+      const finalizeRequest = async (force = false) => {
+        const finalizeResponse = await fetch(`/api/upload/finalize`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transferId,
+            force
+          }),
+        });
+        
+        if (!finalizeResponse.ok) {
+          if (finalizeResponse.status === 400) {
+            const errorData = await finalizeResponse.json();
+            if (errorData.canForce) {
+              setCanForceFinalize(true);
+              setUploadError({
+                message: errorData.error,
+                uploadedFiles: errorData.uploadedFiles,
+                expectedFiles: errorData.expectedFiles
+              });
+              throw new Error('FORCE_REQUIRED');
+            }
+          }
+          throw new Error(`Failed to finalize upload: ${finalizeResponse.statusText}`);
+        }
+        
+        return await finalizeResponse.json();
+      };
+      
+      let result;
+      try {
+        result = await finalizeRequest();
+      } catch (finalizeError) {
+        if ((finalizeError as Error).message === 'FORCE_REQUIRED') {
+          // Nu facem nimic aici, doar întrerupem procesul pentru că utilizatorul trebuie să decidă
+          setUploading(true); // Menținem starea de încărcare pentru a afișa interfața
+          setUploadProgress(70); // Setăm progresul la 70%
+          return;
+        }
+        throw finalizeError; // Reluăm eroarea pentru a fi gestionată de catch-ul extern
+      }
+      
+      // Arhivarea s-a terminat
+      updateStageProgress('archiving', 100);
+      
+      // Etapa de criptare, dacă este activată
+      if (isEncryptionEnabled) {
+        setUploadStage('encrypting');
+        
+        // Simulare progres pentru criptare
+        let encryptProgress = 0;
+        const encryptInterval = setInterval(() => {
+          encryptProgress += 10;
+          if (encryptProgress > 100) {
+            clearInterval(encryptInterval);
+            encryptProgress = 100;
+          }
+          updateStageProgress('encrypting', encryptProgress);
+        }, 200);
+        
+        // Simulăm finalizarea criptării după un timp
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        clearInterval(encryptInterval);
+        updateStageProgress('encrypting', 100);
+      }
+      
+      // Etapa de finalizare
+      setUploadStage('completing');
+      
+      // Simulare progres pentru finalizare
+      let completingProgress = 0;
+      const completingInterval = setInterval(() => {
+        completingProgress += 20;
+        if (completingProgress > 100) {
+          clearInterval(completingInterval);
+          completingProgress = 100;
+        }
+        updateStageProgress('completing', completingProgress);
+      }, 100);
+      
+      // Simulăm finalizarea după un timp
+      await new Promise(resolve => setTimeout(resolve, 500));
+      clearInterval(completingInterval);
+      updateStageProgress('completing', 100);
+      
+      // Complete the process
+      setTimeout(() => {
+        setUploading(false);
+        setIsUploading(false);
+        setUploadSpeed(null);
+        setEstimatedTimeRemaining(null);
+        onUploadComplete({
+          downloadLink: result.downloadLink,
+          emailSent: result.emailSent
+        });
+        
+        // Clear the selected files
+        clearFiles();
+        // Curăță lastTransferId din localStorage
+        localStorage.removeItem('lastTransferId');
+      }, 500);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      setError(t('errors.uploadError'));
+      setUploading(false);
+      setIsUploading(false);
+      setUploadSpeed(null);
+      setEstimatedTimeRemaining(null);
+    }
+  };
+  
+  const handleForceFinalize = async () => {
+    if (!canForceFinalize) return;
+    
+    try {
+      setCanForceFinalize(false);
+      setUploadError(null);
+      
+      // Etapa de arhivare
+      setUploadStage('archiving');
+      updateStageProgress('archiving', 10);
+      
+      const transferId = localStorage.getItem('lastTransferId');
+      if (!transferId) {
+        throw new Error('Missing transfer ID');
+      }
       
       const finalizeResponse = await fetch(`/api/upload/finalize`, {
         method: 'POST',
@@ -274,7 +536,8 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          transferId
+          transferId,
+          force: true
         }),
       });
       
@@ -282,7 +545,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         throw new Error(`Failed to finalize upload: ${finalizeResponse.statusText}`);
       }
       
-      // Process finalization result
       const result = await finalizeResponse.json();
       
       // Arhivarea s-a terminat
@@ -332,6 +594,8 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       setTimeout(() => {
         setUploading(false);
         setIsUploading(false);
+        setUploadSpeed(null);
+        setEstimatedTimeRemaining(null);
         onUploadComplete({
           downloadLink: result.downloadLink,
           emailSent: result.emailSent
@@ -339,13 +603,17 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         
         // Clear the selected files
         clearFiles();
+        // Curăță lastTransferId din localStorage
+        localStorage.removeItem('lastTransferId');
       }, 500);
       
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('Force finalize error:', error);
       setError(t('errors.uploadError'));
       setUploading(false);
       setIsUploading(false);
+      setUploadSpeed(null);
+      setEstimatedTimeRemaining(null);
     }
   };
   
@@ -428,8 +696,15 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
                       ></div>
                     </div>
                     {uploadStage === 'uploading' && (
-                      <div className="text-xs text-white-400 mt-1">
-                        {processedFiles} / {totalFiles} {t('upload.processingFiles')}
+                      <div className="text-xs text-white-400 mt-1 flex justify-between items-center">
+                        <span>
+                          {processedFiles} / {totalFiles} {t('upload.processingFiles')}
+                        </span>
+                        {uploadSpeed && estimatedTimeRemaining && (
+                          <span className="text-xs text-indigo-400">
+                            {uploadSpeed} • {estimatedTimeRemaining}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -651,14 +926,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           </div>
         </div>
 
-        {error && (
-          <div className="mt-4 bg-red-50 text-red-500 p-3 rounded-md text-sm flex items-start">
-            <svg className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>{error}</span>
-          </div>
-        )}
+        {error && <div className="mb-4 text-red-500">{error}</div>}
 
         <button
           type="submit"

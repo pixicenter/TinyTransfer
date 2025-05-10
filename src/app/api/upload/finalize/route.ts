@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   try {
     // Parsează request body
     const body = await req.json();
-    const { transferId } = body;
+    const { transferId, force = false } = body;
     
     if (!transferId) {
       return NextResponse.json(
@@ -132,16 +132,65 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Verifică dacă toate fișierele au fost încărcate
-    if (metadata.uploadedFileCount < metadata.fileCount) {
+    // Verifică și actualizează numărul real de fișiere din director
+    // Acest lucru rezolvă problema când uploadedFileCount nu reflectă realitatea
+    const filesInDirectory = fs.readdirSync(transferDir)
+      .filter(filename => filename !== 'metadata.json');
+    
+    // Dacă numărul de fișiere din director este diferit de numărul din metadata
+    // sau dacă metadata.files conține mai puține intrări decât uploadedFileCount
+    if (filesInDirectory.length !== metadata.uploadedFileCount || 
+        metadata.files.length !== metadata.uploadedFileCount) {
+      console.log(`Actualizare uploadedFileCount: ${metadata.uploadedFileCount} -> ${filesInDirectory.length}`);
+      
+      // Verificăm fișierele care nu se află în array-ul files
+      const existingFilePaths = new Set(metadata.files.map(f => path.basename(f.path)));
+      const newFiles = filesInDirectory.filter(filename => !existingFilePaths.has(filename));
+      
+      // Adăugăm noile fișiere la array-ul files
+      for (const filename of newFiles) {
+        const filePath = path.join(transferDir, filename);
+        const fileStats = fs.statSync(filePath);
+        const originalname = filename.substring(filename.indexOf('-') + 1);
+        
+        metadata.files.push({
+          path: filePath,
+          originalname: originalname,
+          size: fileStats.size,
+          uploadedAt: new Date(fileStats.birthtime).toISOString()
+        });
+      }
+      
+      // Actualizăm contorul de fișiere
+      metadata.uploadedFileCount = filesInDirectory.length;
+      
+      // Dacă numărul de fișiere încărcate este mai mare decât fileCount, actualizăm și fileCount
+      if (metadata.uploadedFileCount > metadata.fileCount) {
+        console.log(`Actualizare fileCount: ${metadata.fileCount} -> ${metadata.uploadedFileCount}`);
+        metadata.fileCount = metadata.uploadedFileCount;
+      }
+      
+      // Salvăm metadata actualizat
+      fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+    }
+    
+    // Verifică dacă toate fișierele au fost încărcate, cu excepția cazului când forțăm finalizarea
+    if (metadata.uploadedFileCount < metadata.fileCount && !force) {
       return NextResponse.json(
         { 
           error: 'Nu toate fișierele au fost încărcate', 
           uploadedFiles: metadata.uploadedFileCount, 
-          expectedFiles: metadata.fileCount 
+          expectedFiles: metadata.fileCount,
+          canForce: true
         },
         { status: 400 }
       );
+    }
+    
+    // Dacă forțăm finalizarea, actualizăm metadata pentru a reflecta numărul real de fișiere
+    if (force && metadata.uploadedFileCount < metadata.fileCount) {
+      console.log(`Finalizare forțată: ${metadata.uploadedFileCount}/${metadata.fileCount} fișiere încărcate`);
+      metadata.fileCount = metadata.uploadedFileCount;
     }
     
     console.log(`Finalizare transfer ${transferId} cu ${metadata.files.length} fișiere`);

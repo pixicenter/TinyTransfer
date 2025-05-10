@@ -118,7 +118,7 @@ function getAppSettings() {
 async function processFilesInBatches(
   files: Array<File>, 
   transferDir: string,
-  batchSize: number = 20
+  batchSize: number = 2
 ): Promise<ProcessedFile[]> {
   const processedFiles: ProcessedFile[] = [];
   const totalFiles = files.length;
@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
       typeof fileField === 'object' && 'arrayBuffer' in fileField) as File[];
     
     // Process files in batches (4 concurrent files)
-    files = await processFilesInBatches(typedFiles, transferDir, 4);
+    files = await processFilesInBatches(typedFiles, transferDir, 2);
     
     if (files.length === 0) {
       // Clean up the empty transfer directory
