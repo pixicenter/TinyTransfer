@@ -330,37 +330,62 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         batches.push(selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length)));
       }
       
-      // Funcție pentru procesarea loturilor în paralel, limitând numărul de cereri simultane
+      // Funcție pentru procesarea loturilor în paralel, menținând constant numărul de cereri simultane
       const processAllBatches = async () => {
-        const results = [];
+        const results: number[] = [];
+        let completedBatches = 0;
         
-        // Pregătește loturi de indecși pentru procesare
-        const batchIndices = batches.map((_, index) => index);
+        // Pregătește o coadă cu toate batchurile
+        const batchQueue = [...batches];
         
-        // Procesează loturile în grupuri paralele până când toate sunt complete
-        while (batchIndices.length > 0) {
-          // Ia următorul set de indecși pentru procesare paralelă
-          const currentBatchIndices = batchIndices.splice(0, MAX_CONCURRENT_REQUESTS);
+        // Funcție pentru procesarea unui singur batch din coadă
+        const processNextBatch = async () => {
+          if (batchQueue.length === 0) return;
           
-          // Procesează acest set de loturi în paralel
-          const currentPromises = currentBatchIndices.map(index => 
-            uploadBatch(transferId!, batches[index])
-              .then(filesProcessed => {
-                // Actualizează progresul după fiecare lot
-                uploadedFiles += filesProcessed;
-                setProcessedFiles(uploadedFiles);
-                
-                // Actualizare progres pentru etapa de upload
-                const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
-                updateStageProgress('uploading', uploadingProgress);
-                
-                return filesProcessed;
-              })
-          );
+          // Ia următorul batch din coadă
+          const currentBatch = batchQueue.shift()!;
+          const batchIndex = batches.indexOf(currentBatch);
           
-          // Așteaptă ca toate loturile din acest grup să fie procesate
-          const currentResults = await Promise.all(currentPromises);
-          results.push(...currentResults);
+          try {
+            // Procesează batchul
+            const filesProcessed = await uploadBatch(transferId!, currentBatch);
+            
+            // Actualizează progresul
+            uploadedFiles += filesProcessed;
+            setProcessedFiles(uploadedFiles);
+            
+            // Actualizare progres pentru etapa de upload
+            const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
+            updateStageProgress('uploading', uploadingProgress);
+            
+            // Adaugă rezultatul
+            results.push(filesProcessed);
+            completedBatches++;
+            
+            // Dacă mai sunt batchuri în coadă, procesează următorul
+            if (batchQueue.length > 0) {
+              return processNextBatch();
+            }
+          } catch (error) {
+            console.error(`Eroare la procesarea batchului ${batchIndex}:`, error);
+            throw error;
+          }
+        };
+        
+        // Pornește maxim MAX_CONCURRENT_REQUESTS lucrători în paralel
+        const workers = [];
+        const workerCount = Math.min(MAX_CONCURRENT_REQUESTS, batchQueue.length);
+        
+        for (let i = 0; i < workerCount; i++) {
+          workers.push(processNextBatch());
+        }
+        
+        // Așteaptă ca toți lucrătorii să termine
+        await Promise.all(workers);
+        
+        // Verifică dacă toate batchurile au fost procesate
+        if (completedBatches !== batches.length) {
+          console.warn(`Avertisment: S-au finalizat doar ${completedBatches} din ${batches.length} batchuri`);
         }
         
         return results;
