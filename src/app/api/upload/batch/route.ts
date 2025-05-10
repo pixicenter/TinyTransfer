@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { writeFile } from 'fs/promises';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
+import util from 'util';
 
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
         const fileSize = file.size;
         const filePath = path.join(transferDir, `${fileId}-${fileName}`);
         
-        // Salvează fișierul pe disc
+        // Metodă directă și mai sigură pentru a salva fișierul
         const buffer = Buffer.from(await file.arrayBuffer());
         await writeFile(filePath, buffer);
         

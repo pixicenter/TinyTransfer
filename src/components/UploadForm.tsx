@@ -9,6 +9,14 @@ interface UploadFormProps {
 // Define the types for the upload stages
 type UploadStage = 'uploading' | 'archiving' | 'encrypting' | 'completing';
 
+// Interfața pentru progresul fiecărei etape
+interface StageProgress {
+  uploading: number;
+  archiving: number;
+  encrypting: number;
+  completing: number;
+}
+
 export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const { t, locale } = useLocale();
   const { settings } = useSettings();
@@ -26,6 +34,23 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [processedFiles, setProcessedFiles] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Progresul pentru fiecare etapă
+  const [stageProgress, setStageProgress] = useState<StageProgress>({
+    uploading: 0,
+    archiving: 0,
+    encrypting: 0,
+    completing: 0
+  });
+  
+  // Ponderi pentru fiecare etapă în progresul global (total 100)
+  const stageWeights = {
+    uploading: 70,
+    archiving: 20,
+    encrypting: 5,
+    completing: 5
+  };
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check if the password is required (when encryption is enabled and the key source is "password")
@@ -48,6 +73,17 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         return t('upload.uploading');
     }
   };
+  
+  // Calculează progresul global pe baza progresului fiecărei etape și a ponderilor
+  useEffect(() => {
+    const globalProgress = 
+      (stageProgress.uploading * stageWeights.uploading / 100) +
+      (stageProgress.archiving * stageWeights.archiving / 100) +
+      (stageProgress.encrypting * stageWeights.encrypting / 100) +
+      (stageProgress.completing * stageWeights.completing / 100);
+    
+    setUploadProgress(Math.round(globalProgress));
+  }, [stageProgress]);
 
   // Update the transfer name suggestion when the selected files change
   useEffect(() => {
@@ -120,6 +156,14 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       return;
     }
     
+    // Resetarea progresului pentru toate etapele
+    setStageProgress({
+      uploading: 0,
+      archiving: 0,
+      encrypting: 0,
+      completing: 0
+    });
+    
     setUploading(true);
     setError('');
     setUploadStage('uploading');
@@ -148,232 +192,154 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       }
       
       // Add files in chunks of 10 to prevent memory issues with huge uploads
-      const MAX_BATCH_SIZE = 10;
+      const MAX_BATCH_SIZE = 50;
       const totalBatches = Math.ceil(selectedFiles.length / MAX_BATCH_SIZE);
       
-      // For large file counts (>100), use a different approach
-      const isLargeUpload = selectedFiles.length > 100;
       let transferId: string | null = null;
       let uploadedFiles = 0;
       
-      if (isLargeUpload) {
-        setUploadStage('uploading');
-        // Process files in batches - first we send metadata to create a session
-        const initResponse = await fetch(`/api/upload/initialize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            transferName: transferName.trim() || t('upload.title'),
-            fileCount: selectedFiles.length,
-            totalSize: getTotalSize(),
-            password,
-            expiration,
-            email: email || '',
-            localEncryption: canUseLocalEncryption && localEncryption,
-            localEncryptionKeySource
-          }),
-        });
-        
-        if (!initResponse.ok) {
-          throw new Error(`Failed to initialize upload: ${initResponse.statusText}`);
-        }
-        
-        const initData = await initResponse.json();
-        transferId = initData.transferId;
-        
-        // Upload files in batches
-        for (let i = 0; i < selectedFiles.length; i += MAX_BATCH_SIZE) {
-          const batch = selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length));
-          const batchData = new FormData();
-          
-          // Add the transfer ID to each batch
-          if (transferId) {
-            batchData.append('transferId', transferId);
-          } else {
-            throw new Error('ID-ul transferului nu a fost generat corect');
-          }
-          
-          // Add batch files
-          for (const file of batch) {
-            batchData.append('files', file);
-          }
-          
-          // Upload the batch
-          const batchResponse = await fetch(`/api/upload/batch`, {
-            method: 'POST',
-            body: batchData,
-          });
-          
-          if (!batchResponse.ok) {
-            throw new Error(`Failed to upload batch: ${batchResponse.statusText}`);
-          }
-          
-          // Update progress
-          uploadedFiles += batch.length;
-          setProcessedFiles(uploadedFiles);
-          setUploadProgress(Math.min(60, Math.round((uploadedFiles / selectedFiles.length) * 60)));
-        }
-        
-        // Finalize the upload
-        setUploadStage('archiving');
-        setUploadProgress(60);
-        
-        const finalizeResponse = await fetch(`/api/upload/finalize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            transferId
-          }),
-        });
-        
-        if (!finalizeResponse.ok) {
-          throw new Error(`Failed to finalize upload: ${finalizeResponse.statusText}`);
-        }
-        
-        // Process finalization result
-        const result = await finalizeResponse.json();
-        
-        if (isEncryptionEnabled) {
-          setUploadStage('encrypting');
-          setUploadProgress(80);
-          setTimeout(() => {
-            setUploadProgress(95);
-          }, 1000);
-        } else {
-          setUploadStage('completing');
-          setUploadProgress(90);
-        }
-        
-        // Complete the process
-        setTimeout(() => {
-          setUploadProgress(100);
-          setUploading(false);
-          onUploadComplete({
-            downloadLink: result.downloadLink,
-            emailSent: result.emailSent
-          });
-          
-          // Clear the selected files
-          clearFiles();
-        }, 1500);
-        
-        return;
-      }
+      // Etapa de inițializare
+      setUploadStage('uploading');
       
-      // Regular upload process for smaller file counts
-      selectedFiles.forEach(file => formData.append('files', file));
-      
-      // Simulate different stages of the process
-      
-      // Stage 1: Uploading files (0-60%)
-      const uploadingInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 60) {
-            clearInterval(uploadingInterval);
-            // Go to the next stage - archiving
-            setUploadStage('archiving');
-            return 60;
-          }
-          return prev + 5;
-        });
-      }, 300);
-      
-      // Send the files to the server
-      const response = await fetch(`/api/upload?transferId=${encodeURIComponent(transferName.trim() || t('upload.title'))}`, {
+      // Process files in batches - first we send metadata to create a session
+      const initResponse = await fetch(`/api/upload/initialize`, {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transferName: transferName.trim() || t('upload.title'),
+          fileCount: selectedFiles.length,
+          totalSize: getTotalSize(),
+          password,
+          expiration,
+          email: email || '',
+          localEncryption: canUseLocalEncryption && localEncryption,
+          localEncryptionKeySource
+        }),
       });
       
-      // After receiving the response, simulate the rest of the stages
+      if (!initResponse.ok) {
+        throw new Error(`Failed to initialize upload: ${initResponse.statusText}`);
+      }
       
-      // Stage 2: Archiving files (60-80%)
-      clearInterval(uploadingInterval);
-      setUploadStage('archiving');
-      setUploadProgress(60);
+      const initData = await initResponse.json();
+      transferId = initData.transferId;
       
-      // Simulate archiving
-      const archivingInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 80) {
-            clearInterval(archivingInterval);
-            
-            // If encryption is enabled, go to the encryption stage
-            if (isEncryptionEnabled) {
-              setUploadStage('encrypting');
-            } else {
-              // Otherwise, go directly to completion
-              setUploadStage('completing');
-            }
-            
-            return prev;
-          }
-          return prev + 2;
+      // Upload files in batches
+      for (let i = 0; i < selectedFiles.length; i += MAX_BATCH_SIZE) {
+        const batch = selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length));
+        const batchData = new FormData();
+        
+        // Add the transfer ID to each batch
+        if (transferId) {
+          batchData.append('transferId', transferId);
+        } else {
+          throw new Error('ID-ul transferului nu a fost generat corect');
+        }
+        
+        // Add batch files
+        for (const file of batch) {
+          batchData.append('files', file);
+        }
+        
+        // Upload the batch
+        const batchResponse = await fetch(`/api/upload/batch`, {
+          method: 'POST',
+          body: batchData,
         });
-      }, 200);
+        
+        if (!batchResponse.ok) {
+          throw new Error(`Failed to upload batch: ${batchResponse.statusText}`);
+        }
+        
+        const batchResult = await batchResponse.json();
+        
+        // Update progress with real data
+        uploadedFiles += batch.length;
+        setProcessedFiles(uploadedFiles);
+        
+        // Actualizare progres pentru etapa de upload
+        const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
+        updateStageProgress('uploading', uploadingProgress);
+      }
       
-      // Wait a little for the simulation of archiving
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      clearInterval(archivingInterval);
+      // Etapa de arhivare
+      setUploadStage('archiving');
+      updateStageProgress('archiving', 10); // Inițial 10% progres pentru arhivare
       
-      // Stage 3: Encryption (if enabled) (80-95%)
+      const finalizeResponse = await fetch(`/api/upload/finalize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transferId
+        }),
+      });
+      
+      if (!finalizeResponse.ok) {
+        throw new Error(`Failed to finalize upload: ${finalizeResponse.statusText}`);
+      }
+      
+      // Process finalization result
+      const result = await finalizeResponse.json();
+      
+      // Arhivarea s-a terminat
+      updateStageProgress('archiving', 100);
+      
+      // Etapa de criptare, dacă este activată
       if (isEncryptionEnabled) {
         setUploadStage('encrypting');
-        setUploadProgress(80);
         
-        const encryptingInterval = setInterval(() => {
-          setUploadProgress(prev => {
-            if (prev >= 95) {
-              clearInterval(encryptingInterval);
-              setUploadStage('completing');
-              return 95;
-            }
-            return prev + 1;
-          });
-        }, 100);
-        
-        // Wait a bit for the simulation of encryption
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        clearInterval(encryptingInterval);
-      }
-      
-      // Stage 4: Completing the transfer (95-100%)
-      setUploadStage('completing');
-      setUploadProgress(prev => Math.max(prev, 95));
-      
-      const finalInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(finalInterval);
-            return 100;
+        // Simulare progres pentru criptare
+        let encryptProgress = 0;
+        const encryptInterval = setInterval(() => {
+          encryptProgress += 10;
+          if (encryptProgress > 100) {
+            clearInterval(encryptInterval);
+            encryptProgress = 100;
           }
-          return prev + 1;
-        });
-      }, 50);
-      
-      // Process the response
-      const result = await response.json();
-      clearInterval(finalInterval);
-      setUploadProgress(100);
-      
-      if (result.error) {
-        setError(result.error);
-        setUploading(false);
-        return;
+          updateStageProgress('encrypting', encryptProgress);
+        }, 200);
+        
+        // Simulăm finalizarea criptării după un timp
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        clearInterval(encryptInterval);
+        updateStageProgress('encrypting', 100);
       }
       
-      // Complete the upload process
-      setUploading(false);
-      onUploadComplete({
-        downloadLink: result.downloadLink,
-        emailSent: result.emailSent || false
-      });
+      // Etapa de finalizare
+      setUploadStage('completing');
       
-      // Clear the selected files
-      clearFiles();
+      // Simulare progres pentru finalizare
+      let completingProgress = 0;
+      const completingInterval = setInterval(() => {
+        completingProgress += 20;
+        if (completingProgress > 100) {
+          clearInterval(completingInterval);
+          completingProgress = 100;
+        }
+        updateStageProgress('completing', completingProgress);
+      }, 100);
+      
+      // Simulăm finalizarea după un timp
+      await new Promise(resolve => setTimeout(resolve, 500));
+      clearInterval(completingInterval);
+      updateStageProgress('completing', 100);
+      
+      // Complete the process
+      setTimeout(() => {
+        setUploading(false);
+        setIsUploading(false);
+        onUploadComplete({
+          downloadLink: result.downloadLink,
+          emailSent: result.emailSent
+        });
+        
+        // Clear the selected files
+        clearFiles();
+      }, 500);
       
     } catch (error) {
       console.error('Upload error:', error);
@@ -388,6 +354,14 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Actualizează progresul pentru etapa curentă
+  const updateStageProgress = (stage: UploadStage, progress: number) => {
+    setStageProgress(prev => ({
+      ...prev,
+      [stage]: progress
+    }));
   };
 
   return (
@@ -420,16 +394,89 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         >
           {uploading && (
             <div className="absolute inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-10 rounded-xl">
-              <div className="w-full max-w-md mx-auto px-6">
-                <div className="mb-2 flex justify-between text-sm text-white-600">
-                  <span>{getStageText()}</span>
-                  <span>{uploadProgress}%</span>
+              <div className="w-full max-w-md mx-auto px-6 space-y-4">
+                {/* Progres global */}
+                <div className="mb-1">
+                  <div className="flex justify-between text-sm text-white-600 mb-1">
+                    <span>{t('upload.overallProgress')}</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2.5">
+                    <div 
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
+                  </div>
                 </div>
-                <div className="w-full bg-gray-400 rounded-full h-2.5">
-                  <div 
-                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
+                
+                {/* Etapa curentă și detalii */}
+                <div className="bg-gray-800/50 p-3 rounded-md">
+                  <div className="text-sm font-medium text-white-600 mb-2">
+                    {getStageText()}
+                  </div>
+                  
+                  {/* Bară de progres pentru etapa de încărcare */}
+                  <div className={`mb-2 ${uploadStage === 'uploading' ? 'opacity-100' : 'opacity-60'}`}>
+                    <div className="flex justify-between text-xs text-white-400 mb-1">
+                      <span>{t('upload.uploadingFiles')}</span>
+                      <span>{stageProgress.uploading}%</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5">
+                      <div 
+                        className="bg-green-500 h-1.5 rounded-full" 
+                        style={{ width: `${stageProgress.uploading}%` }}
+                      ></div>
+                    </div>
+                    {uploadStage === 'uploading' && (
+                      <div className="text-xs text-white-400 mt-1">
+                        {processedFiles} / {totalFiles} {t('upload.processingFiles')}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Bară de progres pentru etapa de arhivare */}
+                  <div className={`mb-2 ${uploadStage === 'archiving' ? 'opacity-100' : 'opacity-60'}`}>
+                    <div className="flex justify-between text-xs text-white-400 mb-1">
+                      <span>{t('upload.archivingFiles')}</span>
+                      <span>{stageProgress.archiving}%</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5">
+                      <div 
+                        className="bg-blue-500 h-1.5 rounded-full" 
+                        style={{ width: `${stageProgress.archiving}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  {/* Bară de progres pentru etapa de criptare (afișată doar dacă este necesară) */}
+                  {isEncryptionEnabled && (
+                    <div className={`mb-2 ${uploadStage === 'encrypting' ? 'opacity-100' : 'opacity-60'}`}>
+                      <div className="flex justify-between text-xs text-white-400 mb-1">
+                        <span>{t('upload.encryptingFiles')}</span>
+                        <span>{stageProgress.encrypting}%</span>
+                      </div>
+                      <div className="w-full bg-gray-700 rounded-full h-1.5">
+                        <div 
+                          className="bg-purple-500 h-1.5 rounded-full" 
+                          style={{ width: `${stageProgress.encrypting}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Bară de progres pentru etapa de finalizare */}
+                  <div className={`${uploadStage === 'completing' ? 'opacity-100' : 'opacity-60'}`}>
+                    <div className="flex justify-between text-xs text-white-400 mb-1">
+                      <span>{t('upload.completingTransfer')}</span>
+                      <span>{stageProgress.completing}%</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5">
+                      <div 
+                        className="bg-yellow-500 h-1.5 rounded-full" 
+                        style={{ width: `${stageProgress.completing}%` }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -601,8 +648,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
                 </div>
               </div>
             </div>
-
-            
           </div>
         </div>
 
@@ -641,15 +686,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           )}
         </button>
       </form>
-      <div className="upload-progress-container">
-        {isUploading && uploadStage === 'uploading' && totalFiles > 100 && (
-          <div className="batch-progress">
-            <span>
-              {processedFiles} / {totalFiles} {t('upload.processingFiles')}
-            </span>
-          </div>
-        )}
-      </div>
     </div>
   );
 } 

@@ -8,6 +8,8 @@ import path from 'path';
 import { writeFile } from 'fs/promises';
 import crypto from 'crypto';
 import { CleanupService } from '../../../services/CleanupService';
+import { pipeline } from 'stream';
+import { Readable } from 'stream';
 
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
@@ -116,7 +118,7 @@ function getAppSettings() {
 async function processFilesInBatches(
   files: Array<File>, 
   transferDir: string,
-  batchSize: number = 4
+  batchSize: number = 20
 ): Promise<ProcessedFile[]> {
   const processedFiles: ProcessedFile[] = [];
   const totalFiles = files.length;
@@ -135,8 +137,12 @@ async function processFilesInBatches(
         const filePath = path.join(transferDir, `${fileId}-${fileName}`);
         
         // Save file to disk
-        const buffer = Buffer.from(await file.arrayBuffer());
-        await writeFile(filePath, buffer);
+        const fileStream = fs.createWriteStream(filePath);
+        const readable = new Readable();
+        readable._read = () => {}; // Implementare necesară
+        readable.push(Buffer.from(await file.arrayBuffer()));
+        readable.push(null);
+        await pipeline(readable, fileStream);
         
         processedCount++;
         console.log(`[${processedCount}/${totalFiles}] Saved file: ${fileName} (${fileSize} bytes)`);

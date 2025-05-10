@@ -196,6 +196,8 @@ const en = {
     noFilesSelected: 'No files selected',
     fileSizeLimit: 'File size limit:',
     totalSize: 'Total size:',
+    processingFiles: 'Processing files...',
+    overallProgress: 'Transfer progress:',
   },
   download: {
     title: 'Download files',

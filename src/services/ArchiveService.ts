@@ -23,7 +23,7 @@ interface FileToArchive {
 export class ArchiveService {
   private static STORAGE_DIR = path.join(process.cwd(), 'storage');
   private static TEMP_DIR = path.join(process.cwd(), 'tmp');
-  private static MAX_FILES_PER_BATCH = 100; // Maximum files to add to archive at once
+  private static MAX_FILES_PER_BATCH = 500; // Maximum files to add to archive at once
 
   static initialize() {
     if (!fs.existsSync(this.STORAGE_DIR)) {
