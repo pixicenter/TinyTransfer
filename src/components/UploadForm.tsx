@@ -20,9 +20,9 @@ interface StageProgress {
 // Setările pentru configurarea încărcărilor
 const UPLOAD_SETTINGS = {
   // Numărul maxim de fișiere per lot
-  MAX_BATCH_SIZE: 5,
+  MAX_BATCH_SIZE: 1,
   // Numărul maxim de cereri paralele (conexiuni simultane)
-  MAX_CONCURRENT_REQUESTS: 4,
+  MAX_CONCURRENT_REQUESTS: 5,
   // Activează raportarea detaliată a progresului
   DETAILED_PROGRESS: true
 };

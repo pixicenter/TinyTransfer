@@ -118,7 +118,7 @@ function getAppSettings() {
 async function processFilesInBatches(
   files: Array<File>, 
   transferDir: string,
-  batchSize: number = 2
+  batchSize: number = 1
 ): Promise<ProcessedFile[]> {
   const processedFiles: ProcessedFile[] = [];
   const totalFiles = files.length;
