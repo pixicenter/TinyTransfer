@@ -41,7 +41,7 @@ const HeroSlideshow = () => {
         
         // Continuăm să încărcăm celelalte imagini în background
         Promise.all(preloadPromises).then(() => {
-          console.log('Toate imaginile au fost preîncărcate');
+          // console.log('Toate imaginile au fost preîncărcate');
         });
       } catch (error) {
         console.error('Eroare la preîncărcarea imaginilor:', error);
@@ -551,7 +551,7 @@ const SetupModal = ({ isOpen, styles }: { isOpen: boolean, styles: any }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { t } = useLocale();
-  const router = useRouter();
+  // const router = useRouter();
 
   // Password validation state
   const [passwordRequirements, setPasswordRequirements] = useState({
@@ -1034,7 +1034,7 @@ const LoginModal = ({ isOpen, onClose, styles }: { isOpen: boolean, onClose: () 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
+  // const router = useRouter();
   const { t } = useLocale();
 
   const handleSubmit = async (e: React.FormEvent) => {

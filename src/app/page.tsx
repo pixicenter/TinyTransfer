@@ -7,27 +7,26 @@ import LoadingScreen from '../components/LoadingScreen';
 import LandingPage from '../components/LandingPage';
 
 // Add a client-side script to check and block access to the setup page if an admin already exists
-const blockSetupPageIfNeeded = `
-(function() {
-  if (window.location.pathname === '/') {
-    // Check if an admin is already configured
-    fetch('/api/auth/setup')
-      .then(response => {
-        if (response.status === 403) {
-          // Admin is already configured, redirect to login page
-          window.location.href = '/';
-        }
-      })
-      .catch(error => {
-        console.error('Error checking admin setup:', error);
-      });
-  }
-})();
-`;
+// const blockSetupPageIfNeeded = `
+// (function() {
+//   if (window.location.pathname === '/') {
+//     // Check if an admin is already configured
+//     fetch('/api/auth/setup')
+//       .then(response => {
+//         if (response.status === 403) {
+//           // Admin is already configured, redirect to login page
+//           window.location.href = '/';
+//         }
+//       })
+//       .catch(error => {
+//         console.error('Error checking admin setup:', error);
+//       });
+//   }
+// })();
+// `;
 
 export default function HomePage() {
   const router = useRouter();
-  const { t } = useLocale();
   const [isLoading, setIsLoading] = useState(true);
   const [isSetupRequired, setIsSetupRequired] = useState(false);
   const [isCheckComplete, setIsCheckComplete] = useState(false);

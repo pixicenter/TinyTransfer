@@ -11,7 +11,7 @@ const GALLERY_PATH = path.join(process.cwd(), 'public', 'gallery');
 // Ensure the gallery directory exists
 if (!fs.existsSync(GALLERY_PATH)) {
   fs.mkdirSync(GALLERY_PATH, { recursive: true });
-  console.log(`Gallery directory created at ${GALLERY_PATH}`);
+  // console.log(`Gallery directory created at ${GALLERY_PATH}`);
 }
 
 // This route will be accessible at /gallery
@@ -27,11 +27,11 @@ export async function GET(request: NextRequest) {
     const mode = url.searchParams.get('mode');
     const index = url.searchParams.get('index');
     
-    console.log(`Public gallery request - mode: ${mode}, index: ${index}`);
+    // console.log(`Public gallery request - mode: ${mode}, index: ${index}`);
     
     // Read the files from the directory
     const files = fs.readdirSync(GALLERY_PATH);
-    console.log(`Number of files in gallery: ${files.length}`);
+    // console.log(`Number of files in gallery: ${files.length}`);
     
     // Filter only image files (.jpg, .jpeg, .png, .webp, etc.)
     const imageFiles = files.filter(file => {
@@ -39,14 +39,14 @@ export async function GET(request: NextRequest) {
       return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'].includes(ext);
     });
     
-    console.log(`Number of filtered image files: ${imageFiles.length}`);
+    // console.log(`Number of filtered image files: ${imageFiles.length}`);
     
     // If we request a specific index
     if (mode === 'single' && index !== null) {
       const imageIndex = parseInt(index, 10);
       if (!isNaN(imageIndex) && imageIndex >= 0 && imageIndex < imageFiles.length) {
         const image = imageFiles[imageIndex];
-        // console.log(`Returning specific image: ${image}`);
+        // // console.log(`Returning specific image: ${image}`);
         
         // Check if the file actually exists
         const imagePath = path.join(GALLERY_PATH, image);
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     
     // Return only the gallery metadata (not the images)
     if (mode === 'info') {
-      console.log(`Returning gallery info: total=${imageFiles.length}`);
+      // console.log(`Returning gallery info: total=${imageFiles.length}`);
       return NextResponse.json({ total: imageFiles.length });
     }
     
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     // Take only the first MAX_IMAGES images
     const limitedImages = shuffledImages.slice(0, MAX_IMAGES);
     
-    // console.log(`Returning ${limitedImages.length} random images from ${imageFiles.length} total`);
+    // // console.log(`Returning ${limitedImages.length} random images from ${imageFiles.length} total`);
     
     return NextResponse.json({ 
       images: limitedImages, 

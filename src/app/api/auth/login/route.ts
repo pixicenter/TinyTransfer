@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const { email, password } = await request.json();
 
     // Logging pentru debugging
-    console.log('Login attempt received');
+    // console.log('Login attempt received');
 
     // Get admin password hash from settings
     const settings = db.prepare('SELECT admin_password_hash, admin_email FROM settings LIMIT 1').get() as AdminSettings;
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Verify email
     if (email !== settings.admin_email) {
-      console.log('Invalid email');
+      // console.log('Invalid email');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
@@ -45,14 +45,14 @@ export async function POST(request: NextRequest) {
     );
 
     if (!passwordMatch) {
-      console.log('Invalid password');
+      // console.log('Invalid password');
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
       );
     }
 
-    console.log('Credentials valid, generating token');
+    // console.log('Credentials valid, generating token');
 
     // Generate JWT token with a longer expiration
     const secret = new TextEncoder().encode(
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       .setExpirationTime('24h') // Token valid for 24 hours
       .sign(secret);
 
-    console.log('JWT token generated');
+    // console.log('JWT token generated');
     
     // Set cookie with proper options
     const response = NextResponse.json({ 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       path: '/' // Available on all paths
     });
 
-    console.log('Auth cookie set');
+    // console.log('Auth cookie set');
     
     return response;
   } catch (error) {

@@ -1,4 +1,3 @@
-import { deleteExpiredTransfers } from '../lib/db';
 import cron from 'node-cron';
 import db from '../lib/db';
 import { R2StorageService } from './R2StorageService';
@@ -53,9 +52,9 @@ export class CleanupService {
       let transfersDeleted = 0;
 
       for (const transfer of expiredTransfers) {
-        try {
-          // Ștergem fișierele din storage
-          const deletedCount = await r2Service.deleteTransferFiles(transfer.id);
+    try {
+          // Folosim metoda cu paralelizare pentru ștergere mai rapidă (20 de cereri paralele)
+          const deletedCount = await r2Service.deleteTransferFilesParallel(transfer.id, 20);
           filesDeleted += deletedCount;
           console.log(`Deleted ${deletedCount} files for expired transfer ${transfer.id}`);
           
@@ -105,7 +104,7 @@ export class CleanupService {
 
       if (transfersDeleted > 0) {
         console.log(`Cleanup completed: Deleted ${transfersDeleted} expired transfers and ${filesDeleted} files from storage`);
-      }
+            }
       return transfersDeleted;
     } catch (error) {
       console.error('Error in deleteExpiredTransfers:', error);

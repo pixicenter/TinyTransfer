@@ -76,9 +76,9 @@ const settingsColumnNames = settingsColumns.map((col: any) => col.name);
 
 if (!settingsColumnNames.includes('admin_email')) {
   try {
-    console.log('Migrating settings table to add admin_email column...');
+    // console.log('Migrating settings table to add admin_email column...');
     db.exec('ALTER TABLE settings ADD COLUMN admin_email TEXT DEFAULT "admin@example.com"');
-    console.log('Migration successful.');
+    // console.log('Migration successful.');
   } catch (error) {
     console.error('Error during migration:', error);
   }

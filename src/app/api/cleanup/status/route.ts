@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const logFile = path.join(logsDir, 'cleanup.log');
     
     let logExists = false;
-    let lastRuns: string[] = [];
+    const lastRuns: string[] = [];
     let isRunning = false;
     
     if (fs.existsSync(logFile)) {

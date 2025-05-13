@@ -14,7 +14,7 @@ const LOGO_PATH = path.join(process.cwd(), 'public', 'logos');
 // Ensure the logo directory exists
 if (!fs.existsSync(LOGO_PATH)) {
   fs.mkdirSync(LOGO_PATH, { recursive: true });
-  console.log(`Logo directory created at ${LOGO_PATH}`);
+  // console.log(`Logo directory created at ${LOGO_PATH}`);
 }
 
 // Allowed file types
@@ -34,7 +34,7 @@ function isAuthenticated() {
 // Helper for downloading files from URLs
 async function downloadFileFromUrl(url: string): Promise<{ buffer: Buffer, contentType: string | null }> {
   try {
-    console.log(`Downloading file from URL: ${url}`);
+    // console.log(`Downloading file from URL: ${url}`);
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -50,7 +50,7 @@ async function downloadFileFromUrl(url: string): Promise<{ buffer: Buffer, conte
     const buffer = Buffer.from(arrayBuffer);
     const contentType = response.headers.get('content-type');
 
-    console.log(`Downloaded file: ${buffer.length} bytes, content-type: ${contentType}`);
+    // console.loglog(`Downloaded file: ${buffer.length} bytes, content-type: ${contentType}`);
     return { buffer, contentType };
   } catch (error) {
     console.error('Error downloading file:', error);
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    console.log('Processing logo upload request');
+    // console.loglog('Processing logo upload request');
     
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     // If we have a logoUrl, we'll download and save it
     if (logoUrl) {
       try {
-        console.log(`Received logo URL: ${logoUrl}`);
+        // console.loglog(`Received logo URL: ${logoUrl}`);
         
         if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
           return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
@@ -114,20 +114,20 @@ export async function POST(request: NextRequest) {
         const fileName = `logo_${randomUUID()}${fileExtension}`;
         const filePath = path.join(LOGO_PATH, fileName);
         
-        console.log(`Generated file name for URL: ${fileName}`);
-        console.log(`File path: ${filePath}`);
+        // console.loglog(`Generated file name for URL: ${fileName}`);
+        // console.log(`File path: ${filePath}`);
         
         // Delete old logo if needed
         const url = new URL(request.url);
         const oldLogoQuery = url.searchParams.get('oldLogo');
         
         if (oldLogoQuery && oldLogoQuery.startsWith('/logos/')) {
-          console.log(`Attempting to delete old logo: ${oldLogoQuery}`);
+          // console.log(`Attempting to delete old logo: ${oldLogoQuery}`);
           const oldLogoPath = path.join(process.cwd(), 'public', oldLogoQuery);
           if (fs.existsSync(oldLogoPath)) {
             try {
               fs.unlinkSync(oldLogoPath);
-              console.log(`Old logo deleted: ${oldLogoPath}`);
+              // console.log(`Old logo deleted: ${oldLogoPath}`);
             } catch (err) {
               console.error(`Error deleting old logo: ${err}`);
             }
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
         
         // Save the downloaded file
         await writeFile(filePath, buffer);
-        console.log(`Logo file saved successfully from URL at path: ${filePath}`);
+        // console.log(`Logo file saved successfully from URL at path: ${filePath}`);
         
         return NextResponse.json({ 
           success: true, 
@@ -158,8 +158,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded and no URL provided' }, { status: 400 });
     }
 
-    console.log(`Received file: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
-    console.log(`Logo type: ${type}`);
+    // console.log(`Received file: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
+    // console.log(`Logo type: ${type}`);
     
     // Check the file type
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -179,8 +179,8 @@ export async function POST(request: NextRequest) {
     const fileName = `logo_${randomUUID()}${fileExtension}`;
     const filePath = path.join(LOGO_PATH, fileName);
     
-    console.log(`Generated file name: ${fileName}`);
-    console.log(`File path: ${filePath}`);
+    // console.log(`Generated file name: ${fileName}`);
+    // console.log(`File path: ${filePath}`);
     
     // Convert the File to ArrayBuffer and then to Buffer to save it
     const arrayBuffer = await file.arrayBuffer();
@@ -191,26 +191,26 @@ export async function POST(request: NextRequest) {
     const oldLogoQuery = url.searchParams.get('oldLogo');
     
     if (oldLogoQuery && oldLogoQuery.startsWith('/logos/')) {
-      console.log(`Attempting to delete old logo: ${oldLogoQuery}`);
+      // console.log(`Attempting to delete old logo: ${oldLogoQuery}`);
       const oldLogoPath = path.join(process.cwd(), 'public', oldLogoQuery);
       if (fs.existsSync(oldLogoPath)) {
         try {
           fs.unlinkSync(oldLogoPath);
-          console.log(`Old logo deleted: ${oldLogoPath}`);
+          // console.log(`Old logo deleted: ${oldLogoPath}`);
         } catch (err) {
           console.error(`Error deleting old logo: ${err}`);
         }
       } else {
-        console.log(`Old logo not found at path: ${oldLogoPath}`);
+        // console.log(`Old logo not found at path: ${oldLogoPath}`);
       }
     } else {
-      console.log('No old logo to delete or invalid path');
+      // console.log('No old logo to delete or invalid path');
     }
     
     // Save the file
     try {
       await writeFile(filePath, buffer);
-      console.log(`Logo file saved successfully at path: ${filePath}`);
+      // console.log(`Logo file saved successfully at path: ${filePath}`);
     } catch (err) {
       console.error(`Error saving logo file: ${err}`);
       return NextResponse.json({ error: `Failed to save logo file: ${(err as Error).message}` }, { status: 500 });
@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
 // Delete logo
 export async function DELETE(request: NextRequest) {
   try {
-    console.log('Processing logo delete request');
+    // console.log('Processing logo delete request');
     
     // Check if the request is authenticated
     if (!isAuthenticated()) {
@@ -242,7 +242,7 @@ export async function DELETE(request: NextRequest) {
     const url = new URL(request.url);
     const logoPath = url.searchParams.get('path');
     
-    console.log('Logo delete request:', logoPath);
+    // console.log('Logo delete request:', logoPath);
     
     if (!logoPath) {
       return NextResponse.json({ error: 'No logo path provided' }, { status: 400 });
@@ -250,7 +250,7 @@ export async function DELETE(request: NextRequest) {
     
     // Check if it's an external URL (starts with http:// or https://)
     if (logoPath.startsWith('http://') || logoPath.startsWith('https://')) {
-      console.log('External logo detected, no file deletion needed:', logoPath);
+      // console.log('External logo detected, no file deletion needed:', logoPath);
       return NextResponse.json({ 
         success: true, 
         message: 'External logo reference removed successfully',
@@ -274,7 +274,7 @@ export async function DELETE(request: NextRequest) {
     
     // Delete the file
     fs.unlinkSync(absolutePath);
-    console.log(`Logo deleted successfully: ${logoPath}`);
+    // console.log(`Logo deleted successfully: ${logoPath}`);
     
     return NextResponse.json({ success: true, message: 'Logo deleted successfully' });
     

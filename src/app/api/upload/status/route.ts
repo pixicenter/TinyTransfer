@@ -67,12 +67,12 @@ export async function POST(req: NextRequest) {
     
     // Dacă numărul de fișiere din director este diferit de cel din metadata, actualizăm
     if (filesInDirectory.length !== metadata.uploadedFileCount) {
-      console.log(`Status: Corecție uploadedFileCount: ${metadata.uploadedFileCount} -> ${filesInDirectory.length}`);
+      // console.log(`Status: Corecție uploadedFileCount: ${metadata.uploadedFileCount} -> ${filesInDirectory.length}`);
       metadata.uploadedFileCount = filesInDirectory.length;
       
       // Dacă numărul de fișiere încărcate este mai mare decât fileCount, actualizăm și fileCount
       if (metadata.uploadedFileCount > metadata.fileCount) {
-        console.log(`Status: Actualizare fileCount: ${metadata.fileCount} -> ${metadata.uploadedFileCount}`);
+        // console.log(`Status: Actualizare fileCount: ${metadata.fileCount} -> ${metadata.uploadedFileCount}`);
         metadata.fileCount = metadata.uploadedFileCount;
       }
       

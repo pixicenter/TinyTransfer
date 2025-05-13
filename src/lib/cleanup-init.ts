@@ -37,11 +37,11 @@ export function initializeCleanupService() {
     isInitialized = true;
     
     const message = 'CleanupService initialized from cleanup-init module';
-    console.log(message);
+    // console.log(message);
     logToFile(message);
     
     // Setup logger pentru evenimentele cron
-    // Interceptăm console.log pentru a loga și în fișier
+    // Interceptăm // console.log pentru a loga și în fișier
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
     

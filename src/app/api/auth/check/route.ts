@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       );
       
       await jwtVerify(authToken.value, secret);
-      console.log('Auth check: Valid token');
+      // console.log('Auth check: Valid token');
       
       return NextResponse.json({
         isAuthenticated: true,

@@ -1,10 +1,10 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import fs from 'fs';
 import { Readable, PassThrough } from 'stream';
 import { pipeline } from 'stream/promises';
 import JSZip from 'jszip';
 import { StorageProvider } from './StorageFactory';
+import { EncryptionService } from './EncryptionService';
 
 // Interfața pentru un fișier R2
 interface R2File {
@@ -18,6 +18,7 @@ export class R2StorageService implements StorageProvider {
   private client: S3Client;
   private bucket: string;
   private publicUrl: string | null;
+  private useEncryption: boolean = true; // Flag pentru activarea/dezactivarea criptării
 
   constructor() {
     // Verificăm dacă avem toate variabilele de mediu necesare
@@ -50,6 +51,25 @@ export class R2StorageService implements StorageProvider {
     });
 
     this.bucket = bucketName;
+    
+    // Inițializăm serviciul de criptare
+    // Cheia și salt-ul pot fi setate prin variabile de mediu
+    const encryptionKey = process.env.ENCRYPTION_MASTER_KEY || undefined;
+    const encryptionSalt = process.env.ENCRYPTION_SALT || undefined;
+    EncryptionService.initialize(encryptionKey, encryptionSalt);
+    
+    // Setăm flag-ul de criptare în funcție de variabila de mediu
+    this.useEncryption = process.env.USE_ENCRYPTION !== 'false';
+    // console.log(`Criptare fișiere: ${this.useEncryption ? 'activată' : 'dezactivată'}`);
+  }
+
+  /**
+   * Setează starea criptării pentru toată aplicația
+   * @param state True pentru a activa criptarea, false pentru a o dezactiva
+   */
+  setEncryptionState(state: boolean): void {
+    this.useEncryption = state;
+    // console.log(`Criptare fișiere: ${this.useEncryption ? 'activată' : 'dezactivată'}`);
   }
 
   /**
@@ -62,18 +82,47 @@ export class R2StorageService implements StorageProvider {
     try {
       const key = `uploads/${transferId}/${file.name}`;
       const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      let buffer = Buffer.from(arrayBuffer);
+      let isEncrypted = false;
+
+      // Pentru fișiere mari, folosim o abordare optimizată
+      const isLargeFile = file.size > 5 * 1024 * 1024; // Fișiere peste 5MB
+
+      // Criptăm buffer-ul dacă criptarea este activată
+      if (this.useEncryption && EncryptionService.isReady()) {
+        try {
+          // Pentru fișiere mari, procesăm direct fără logging
+          if (!isLargeFile) {
+            // Criptare cu conversie corectă de tipuri
+            const encryptedBuffer = EncryptionService.encryptBuffer(buffer, transferId);
+            buffer = Buffer.from(encryptedBuffer);
+            isEncrypted = true;
+          } else {
+            // Procesare optimizată pentru fișiere mari
+            const encryptedBuffer = EncryptionService.encryptBuffer(buffer, transferId);
+            buffer = Buffer.from(encryptedBuffer);
+            isEncrypted = true;
+          }
+        } catch (encryptError) {
+          console.error(`Eroare la criptarea fișierului ${file.name}:`, encryptError);
+          // Continuăm cu buffer-ul original necriptat în caz de eroare
+        }
+      }
 
       const command = new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: buffer,
         ContentLength: buffer.length,
-        ContentType: file.type
+        ContentType: file.type,
+        Metadata: {
+          'encrypted': isEncrypted ? 'true' : 'false'
+        }
       });
 
       await this.client.send(command);
-      console.log(`Fișier încărcat cu succes în R2: ${key}`);
+      
+      // Log minimal pentru performanță
       return key;
     } catch (error) {
       console.error(`Eroare la încărcarea fișierului în R2: ${file.name}`, error);
@@ -82,24 +131,171 @@ export class R2StorageService implements StorageProvider {
   }
 
   /**
+   * Încarcă mai multe fișiere în paralel, optimizat pentru performanță
+   * @param transferId ID-ul transferului
+   * @param files Array de fișiere pentru încărcare
+   * @param concurrency Numărul maxim de încărcări paralele
+   * @returns Array de obiecte cu rezultatele încărcării
+   */
+  async uploadFilesParallel(
+    transferId: string,
+    files: File[],
+    concurrency: number = 4
+  ): Promise<Array<{ name: string, key: string, size: number, success: boolean, error?: string }>> {
+    // Preîncărcăm cheia de criptare pentru acest transfer pentru a evita calculul repetat
+    if (this.useEncryption && EncryptionService.isReady()) {
+      try {
+        EncryptionService.preloadKey(transferId);
+      } catch (error) {
+        console.warn('Nu s-a putut preîncărca cheia de criptare:', error);
+      }
+    }
+
+    // Împărțim fișierele în loturi pentru a limita numărul de cereri paralele
+    const results: Array<{ name: string, key: string, size: number, success: boolean, error?: string }> = [];
+    const batches: File[][] = [];
+    
+    // Grupăm fișierele în loturi
+    for (let i = 0; i < files.length; i += concurrency) {
+      batches.push(files.slice(i, i + concurrency));
+    }
+    
+    // Procesăm loturile pe rând, dar în paralel în cadrul fiecărui lot
+    for (const batch of batches) {
+      const batchPromises = batch.map(async (file) => {
+        try {
+          const key = await this.uploadFile(transferId, file);
+          return {
+            name: file.name,
+            key,
+            size: file.size,
+            success: true
+          };
+        } catch (error) {
+          return {
+            name: file.name,
+            key: '',
+            size: file.size,
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      });
+      
+      // Așteptăm să se proceseze toate fișierele din acest lot
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+    }
+    
+    return results;
+  }
+
+  /**
+   * Încarcă mai multe fișiere în paralel complet (fără limite de lot)
+   * Atenție: Folosiți această metodă doar când aveți puține fișiere și aveți conexiuni stabile
+   * @param transferId ID-ul transferului
+   * @param files Array de fișiere pentru încărcare
+   * @returns Array de obiecte cu rezultatele încărcării
+   */
+  async uploadFilesParallelUnlimited(
+    transferId: string,
+    files: File[]
+  ): Promise<Array<{ name: string, key: string, size: number, success: boolean, error?: string }>> {
+    // Preîncărcăm cheia de criptare pentru performanță
+    if (this.useEncryption && EncryptionService.isReady()) {
+      EncryptionService.preloadKey(transferId);
+    }
+    
+    // Lansăm toate încărcările în paralel
+    const uploadPromises = files.map(async (file) => {
+      try {
+        const key = await this.uploadFile(transferId, file);
+        return {
+          name: file.name,
+          key,
+          size: file.size,
+          success: true
+        };
+      } catch (error) {
+        return {
+          name: file.name,
+          key: '',
+          size: file.size,
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    });
+    
+    // Așteptăm ca toate încărcările să fie finalizate
+    return Promise.all(uploadPromises);
+  }
+
+  /**
    * Încarcă un stream direct în R2
    * @param stream Stream-ul de date pentru încărcare
    * @param key Cheia sub care va fi stocat în R2
    * @param contentLength Dimensiunea totală a conținutului în bytes
+   * @param transferId ID-ul transferului (pentru criptare)
    */
-  async uploadStream(stream: Readable | PassThrough, key: string, contentLength: number): Promise<void> {
+  async uploadStream(
+    stream: Readable | PassThrough, 
+    key: string, 
+    contentLength: number,
+    transferId?: string
+  ): Promise<void> {
     try {
-      console.log(`Începere încărcare stream în R2: ${key} (${contentLength} bytes)`);
+      // console.log(`Începere încărcare stream în R2: ${key} (${contentLength} bytes)`);
+      
+      // Dacă avem ID de transfer și criptarea este activată, aplicăm transform de criptare
+      if (this.useEncryption && transferId && EncryptionService.isReady()) {
+        try {
+          const encryptStream = EncryptionService.createEncryptStream(transferId);
+          
+          // Creăm un stream nou pentru a primi datele criptate
+          const encryptedStream = new PassThrough();
+          
+          // Adăugăm handler pentru erori pe stream-ul original
+          stream.on('error', (err) => {
+            console.error(`Eroare în stream-ul original de încărcare pentru ${key}:`, err);
+            encryptedStream.destroy(err);
+          });
+          
+          // Adăugăm handler pentru erori pe stream-ul de criptare
+          encryptStream.on('error', (err) => {
+            console.error(`Eroare în stream-ul de criptare pentru ${key}:`, err);
+            encryptedStream.destroy(err);
+          });
+          
+          // Pipeline: stream original -> encryptStream -> encryptedStream
+          pipeline(stream, encryptStream, encryptedStream).catch(err => {
+            // console.error(`Eroare în pipeline de criptare pentru ${key}:`, err);
+            encryptedStream.destroy(err);
+          });
+          
+          // Folosim stream-ul criptat pentru încărcare
+          stream = encryptedStream;
+          
+          // console.log(`Stream criptat pentru transfer: ${transferId}, cheie: ${key}`);
+        } catch (error) {
+          console.error(`Eroare la configurarea criptării pentru ${key}:`, error);
+          throw error;
+        }
+      }
       
       const command = new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: stream,
-        ContentLength: contentLength,
+        // Nu mai setăm ContentLength explicit pentru stream-urile criptate
+        ...((!this.useEncryption || !transferId) && { ContentLength: contentLength }),
+        Metadata: {
+          'encrypted': (this.useEncryption && transferId) ? 'true' : 'false'
+        }
       });
 
       await this.client.send(command);
-      console.log(`Stream încărcat cu succes în R2: ${key}`);
+      // console.log(`Stream încărcat cu succes în R2: ${key}`);
     } catch (error) {
       console.error(`Eroare la încărcarea stream-ului în R2: ${key}`, error);
       throw error;
@@ -118,6 +314,8 @@ export class R2StorageService implements StorageProvider {
   ): Promise<Readable> {
     try {
       const key = `uploads/${transferId}/${fileName}`;
+      // console.log(`Începere descărcare stream pentru fișierul: ${key}`);
+      
       const command = new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
@@ -129,7 +327,47 @@ export class R2StorageService implements StorageProvider {
         throw new Error(`Nu s-a putut obține conținutul pentru: ${key}`);
       }
 
-      return response.Body as Readable;
+      const stream = response.Body as Readable;
+      
+      // Verificăm dacă fișierul este criptat
+      const isEncrypted = response.Metadata?.['encrypted'] === 'true' || this.useEncryption;
+      // console.log(`Fișier ${fileName} este criptat: ${isEncrypted}`);
+      
+      // Dacă fișierul este criptat și criptarea este activată, aplicăm decriptare
+      if (isEncrypted && EncryptionService.isReady()) {
+        // console.log(`Decriptare stream pentru fișierul: ${fileName} (transferId: ${transferId})`);
+        
+        try {
+          const decryptStream = EncryptionService.createDecryptStream(transferId);
+          const finalStream = new PassThrough();
+          
+          // Adăugăm handler pentru erori pe stream-ul original pentru a evita crash-ul aplicației
+          stream.on('error', (err) => {
+            console.error(`Eroare în stream-ul de descărcare pentru ${fileName}:`, err);
+            finalStream.destroy(err);
+          });
+          
+          // Adăugăm handler pentru erori pe stream-ul de decriptare
+          decryptStream.on('error', (err) => {
+            console.error(`Eroare în stream-ul de decriptare pentru ${fileName}:`, err);
+            finalStream.destroy(err);
+          });
+          
+          // Pipeline: stream original -> decryptStream -> finalStream
+          pipeline(stream, decryptStream, finalStream).catch(err => {
+            console.error(`Eroare în pipeline de decriptare pentru ${fileName}:`, err);
+            finalStream.destroy(err);
+          });
+          
+          return finalStream;
+        } catch (error) {
+          console.error(`Eroare la configurarea decriptării pentru ${fileName}:`, error);
+          throw error;
+        }
+      }
+      
+      // Dacă nu este criptat sau criptarea este dezactivată, returnăm stream-ul original
+      return stream;
     } catch (error) {
       console.error(`Eroare la descărcarea fișierului din R2: ${fileName}`, error);
       throw error;
@@ -168,7 +406,17 @@ export class R2StorageService implements StorageProvider {
         throw new Error(`Nu s-a putut obține conținutul pentru: ${key}`);
       }
 
-      return response.Body as Readable;
+      const stream = response.Body as Readable;
+      
+      // NOTĂ: Decriptarea parțială nu este implementată în versiunea curentă
+      // Fișierele criptate nu pot fi descărcate cu resume
+      const isEncrypted = response.Metadata?.['encrypted'] === 'true' || this.useEncryption;
+      
+      if (isEncrypted) {
+        console.warn(`Descărcarea parțială pentru fișierele criptate nu este suportată: ${fileName}`);
+      }
+      
+      return stream;
     } catch (error) {
       console.error(`Eroare la descărcarea fișierului din R2: ${fileName}`, error);
       throw error;
@@ -411,35 +659,98 @@ export class R2StorageService implements StorageProvider {
       const zip = new JSZip();
       
       // Procesăm fișierele în paralel, limitând numărul de fișiere procesate simultan
-      const chunkSize = 5; // Numărul de fișiere procesate simultan
-      for (let i = 0; i < files.length; i += chunkSize) {
-        const chunk = files.slice(i, i + chunkSize);
+      console.log(`Începere procesare ${files.length} fișiere pentru arhivă`);
+      
+      // Reducem numărul de fișiere procesate simultan pentru a evita epuizarea memoriei
+      const chunkSize = 2; // Reducem și mai mult pentru a preveni memory pressure
+      let procesate = 0;
+      let erori = 0;
+      
+      // Sortăm fișierele după dimensiune - procesăm mai întâi fișierele mici
+      const sortedFiles = [...files].sort((a, b) => a.size - b.size);
+      
+      for (let i = 0; i < sortedFiles.length; i += chunkSize) {
+        const chunk = sortedFiles.slice(i, i + chunkSize);
+        
+        // Adăugăm un delay mic între loturi pentru a permite eliberarea memoriei
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
         await Promise.all(chunk.map(async (file) => {
-          const fileStream = await this.getFile(transferId, file.name);
-          
-          // Convertim stream-ul în Buffer pentru JSZip
-          const chunks: Uint8Array[] = [];
-          for await (const chunk of fileStream) {
-            chunks.push(chunk);
+          try {
+            // Obținem stream-ul pentru fișier (posibil criptat)
+            const fileStream = await this.getFile(transferId, file.name);
+            
+            // Convertim stream-ul în Buffer, cu tratare specială pentru fișiere mari
+            console.log(`Începere citire: ${file.name} (${Math.round(file.size/1024/1024)}MB)`);
+            
+            const chunks: Uint8Array[] = [];
+            let totalBytes = 0;
+            
+            for await (const chunk of fileStream) {
+              chunks.push(chunk);
+              totalBytes += chunk.length;
+              
+              // Raportăm progresul pentru fișierele mari
+              if (file.size > 30 * 1024 * 1024 && chunks.length % 10 === 0) {
+                console.log(`Progres citire ${file.name}: ${Math.round(totalBytes / file.size * 100)}% (${totalBytes}/${file.size} bytes)`);
+              }
+            }
+            
+            // Verificăm dacă am citit tot fișierul
+            if (totalBytes < file.size) {
+              console.warn(`Posibilă citire incompletă pentru ${file.name}: ${totalBytes}/${file.size} bytes`);
+            }
+            
+            console.log(`Finalizare citire: ${file.name} - ${totalBytes} bytes citite`);
+            const fileData = Buffer.concat(chunks);
+            
+            // Adăugăm fișierul la arhivă FĂRĂ compresie (store)
+            zip.file(file.name, fileData, {
+              compression: "STORE" // Dezactivăm complet compresia pentru toate fișierele
+            });
+            
+            procesate++;
+            console.log(`Fișier adăugat la arhivă (${procesate}/${sortedFiles.length}): ${file.name} (${Math.round(fileData.length/1024)}KB)`);
+          } catch (error) {
+            erori++;
+            console.error(`Eroare la procesarea fișierului ${file.name} pentru arhivă:`, error);
+            // Continuăm cu celelalte fișiere chiar dacă unul eșuează
           }
-          const fileData = Buffer.concat(chunks);
-          
-          zip.file(file.name, fileData);
         }));
       }
 
-      // Generăm arhiva
-      const archiveData = await zip.generateAsync({ type: 'nodebuffer' });
+      if (procesate === 0) {
+        throw new Error('Nu s-a putut adăuga niciun fișier la arhivă');
+      }
 
-      // Încărcăm arhiva în R2
+      console.log(`Generare arhivă finală cu ${procesate} fișiere (${erori} erori)...`);
+      
+      // Generăm arhiva fără compresie pentru viteză și pentru a evita probleme de memorie
+      const archiveData = await zip.generateAsync({ 
+        type: 'nodebuffer',
+        compression: "STORE",  // Dezactivăm complet compresia pentru întreaga arhivă
+      });
+
+      console.log(`Arhivă generată: ${Math.round(archiveData.length/1024/1024)}MB - Încărcare în R2...`);
+
+      // Încărcăm arhiva în R2 (nu criptăm arhiva, doar conținutul individual)
       await this.client.send(new PutObjectCommand({
         Bucket: this.bucket,
         Key: archiveKey,
         Body: archiveData,
         ContentType: 'application/zip',
+        ContentLength: archiveData.length,
+        Metadata: {
+          'encrypted': 'false', // Arhiva nu este criptată, conținutul individual poate fi
+          'fileCount': procesate.toString(),
+          'totalOriginal': sortedFiles.length.toString(),
+          'errors': erori.toString()
+        }
       }));
 
-      console.log(`Arhivă creată cu succes pentru transferul ${transferId}`);
+      console.log(`Arhivă creată cu succes pentru transferul ${transferId} (${archiveData.length} bytes, ${procesate}/${sortedFiles.length} fișiere)`);
       return archiveKey;
     } catch (error) {
       console.error(`Eroare la crearea arhivei: ${error}`);
@@ -454,7 +765,7 @@ export class R2StorageService implements StorageProvider {
    */
   async listObjects(prefix: string): Promise<R2File[]> {
     try {
-      console.log(`Listare obiecte cu prefixul: ${prefix}`);
+      // console.log(`Listare obiecte cu prefixul: ${prefix}`);
       const command = new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,
@@ -484,7 +795,7 @@ export class R2StorageService implements StorageProvider {
    */
   async uploadObject(key: string, data: Buffer | Uint8Array, contentType: string = 'application/octet-stream'): Promise<void> {
     try {
-      console.log(`Încărcare obiect în R2: ${key} (${data.byteLength} bytes)`);
+      // console.log(`Încărcare obiect în R2: ${key} (${data.byteLength} bytes)`);
       
       const command = new PutObjectCommand({
         Bucket: this.bucket,
@@ -495,7 +806,7 @@ export class R2StorageService implements StorageProvider {
       });
 
       await this.client.send(command);
-      console.log(`Obiect încărcat cu succes în R2: ${key}`);
+      // console.log(`Obiect încărcat cu succes în R2: ${key}`);
     } catch (error) {
       console.error(`Eroare la încărcarea obiectului în R2: ${key}`, error);
       throw error;
@@ -510,20 +821,76 @@ export class R2StorageService implements StorageProvider {
    */
   async getFile(transferId: string, fileName: string): Promise<Readable> {
     try {
-      const key = `uploads/${transferId}/${fileName}`;
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key
+      const stream = await this.downloadFileInChunks(transferId, fileName);
+      
+      // Optimizare: Creăm un stream intermediar cu configurație specială pentru compatibilitate cu archiver
+      const passThrough = new PassThrough({
+        // Setăm buffer mare pentru performanță
+        highWaterMark: 1024 * 1024, // 1MB
+        // Setări pentru a evita ERR_STREAM_PREMATURE_CLOSE
+        allowHalfOpen: true,
+        emitClose: false // Nu emitem evenimentul 'close' care poate cauza probleme
       });
-
-      const response = await this.client.send(command);
-      if (!response.Body) {
-        throw new Error('Fișierul nu a fost găsit');
-      }
-
-      return response.Body as Readable;
+      
+      // Monitorizăm evenimentele de pe stream-ul original
+      let bytesReceived = 0;
+      
+      // Configurăm gestionarea streams pentru prevenirea erorilor ERR_STREAM_PREMATURE_CLOSE
+      stream.pipe(passThrough, { end: false }); // Nu propagăm end event automat
+      
+      // Adăugăm handler pentru date, pentru a monitoriza fluxul de date
+      stream.on('data', (chunk) => {
+        bytesReceived += chunk.length;
+      });
+      
+      // Adăugăm handler pentru erori pe stream-ul original
+      stream.on('error', (err) => {
+        console.error(`Eroare în stream-ul original pentru ${fileName}:`, err);
+        // Nu distrugem passThrough imediat pentru a permite continuarea arhivării
+        setTimeout(() => {
+          try {
+            passThrough.end();
+          } catch (e) {
+            console.error(`Eroare secundară la închiderea stream-ului PassThrough pentru ${fileName}:`, e);
+          }
+        }, 100);
+      });
+      
+      // Adăugăm handler pentru end pe stream-ul original
+      stream.on('end', () => {
+        console.log(`Stream-ul pentru ${fileName} s-a încheiat normal: ${bytesReceived} bytes transferați`);
+        
+        // Asigurăm un delay mic înainte de a închide passThrough
+        setTimeout(() => {
+          try {
+            passThrough.end();
+            console.log(`Stream-ul PassThrough pentru ${fileName} a fost închis cu succes`);
+          } catch (e) {
+            console.error(`Eroare la închiderea normală a stream-ului PassThrough pentru ${fileName}:`, e);
+          }
+        }, 200);
+      });
+      
+      // Adăugăm metode pentru a facilita închiderea forțată a stream-urilor din exterior
+      const originalDestroy = passThrough.destroy.bind(passThrough);
+      
+      // Suprascriem metoda destroy pentru a închide și stream-ul original
+      passThrough.destroy = function(error?: Error) {
+        try {
+          // Încercăm să închidem stream-ul original
+          stream.destroy(error);
+        } catch (e) {
+          console.error(`Eroare la distrugerea stream-ului original pentru ${fileName}:`, e);
+        }
+        
+        // Apelăm metoda originală destroy
+        return originalDestroy(error);
+      };
+      
+      console.log(`Stream pregătit pentru fișierul: ${fileName}`);
+      return passThrough;
     } catch (error) {
-      console.error(`Eroare la obținerea fișierului ${fileName}: ${error}`);
+      console.error(`Eroare la obținerea fișierului ${fileName}:`, error);
       throw error;
     }
   }
@@ -534,9 +901,91 @@ export class R2StorageService implements StorageProvider {
    * @returns Numărul de fișiere șterse
    */
   async deleteTransferFiles(transferId: string): Promise<number> {
+    // Folosim varianta cu paralelizare controlată (implicit 10 cereri simultane)
+    return this.deleteTransferFilesParallel(transferId, 10);
+  }
+
+  /**
+   * Șterge toate fișierele asociate unui transfer din R2 cu paralelizare controlată
+   * @param transferId ID-ul transferului
+   * @param concurrency Numărul maxim de operații de ștergere paralele
+   * @returns Numărul de fișiere șterse
+   */
+  async deleteTransferFilesParallel(transferId: string, concurrency: number = 10): Promise<number> {
     try {
-      console.log(`Ștergere fișiere pentru transferul: ${transferId}`);
+      // 1. Listăm toate fișierele din directorul transferului
+      const uploadPrefix = `uploads/${transferId}/`;
+      const uploadedFiles = await this.listObjects(uploadPrefix);
       
+      if (uploadedFiles.length === 0) {
+        console.log(`Nu există fișiere de șters pentru transferul ${transferId}`);
+      }
+      
+      // 2. Verificăm dacă există arhivă asociată
+      const archiveKey = `archives/${transferId}.zip`;
+      const archiveExists = await this.fileExists(archiveKey);
+      
+      // 3. Adăugăm arhiva la lista de fișiere de șters dacă există
+      const allKeys = uploadedFiles.map(file => file.name);
+      if (archiveExists) {
+        allKeys.push(archiveKey);
+      }
+      
+      console.log(`Se șterg ${allKeys.length} fișiere pentru transferul ${transferId} cu concurență ${concurrency}`);
+      
+      if (allKeys.length === 0) {
+        return 0;
+      }
+      
+      // 4. Împărțim lista de fișiere în loturi pentru a controla concurența
+      const batches: string[][] = [];
+      for (let i = 0; i < allKeys.length; i += concurrency) {
+        batches.push(allKeys.slice(i, i + concurrency));
+      }
+      
+      let successCount = 0;
+      let failCount = 0;
+      
+      // 5. Procesăm loturile de fișiere secvențial, dar cu operații paralele în fiecare lot
+      for (const batch of batches) {
+        const batchPromises = batch.map(async (key) => {
+          try {
+            await this.deleteObjectByKey(key);
+            return true;
+          } catch (error) {
+            console.error(`Eroare la ștergerea obiectului ${key}:`, error);
+            return false;
+          }
+        });
+        
+        // Așteptăm finalizarea tuturor ștergerilor din acest lot înainte de a trece la următorul
+        const results = await Promise.all(batchPromises);
+        
+        // Actualizăm contoarele
+        successCount += results.filter(Boolean).length;
+        failCount += results.filter(result => !result).length;
+        
+        // Adăugăm un mic delay între loturi pentru a permite eliberarea resurselor
+        if (batches.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      console.log(`S-au șters ${successCount} fișiere pentru transferul ${transferId} (${failCount} erori)`);
+      return successCount;
+    } catch (error) {
+      console.error(`Eroare la ștergerea fișierelor pentru transferul ${transferId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Șterge toate fișierele asociate unui transfer din R2 folosind paralelizare completă
+   * @param transferId ID-ul transferului
+   * @returns Numărul de fișiere șterse
+   */
+  async deleteTransferFilesUnlimited(transferId: string): Promise<number> {
+    try {
       // 1. Listăm toate fișierele din directorul transferului
       const uploadPrefix = `uploads/${transferId}/`;
       const uploadedFiles = await this.listObjects(uploadPrefix);
@@ -545,28 +994,31 @@ export class R2StorageService implements StorageProvider {
       const archiveKey = `archives/${transferId}.zip`;
       const archiveExists = await this.fileExists(archiveKey);
       
-      let deletedCount = 0;
-      
-      // 3. Ștergem toate fișierele încărcate
-      for (const file of uploadedFiles) {
-        // Folosim deleteObjectByKey pentru a șterge fișierele folosind calea completă
-        const fileKey = file.name; // Name deja conține calea completă din listObjects
-        await this.deleteObjectByKey(fileKey);
-        deletedCount++;
-        console.log(`Fișier șters: ${fileKey}`);
-      }
-      
-      // 4. Ștergem arhiva dacă există
+      // 3. Adăugăm arhiva la lista de fișiere de șters dacă există
+      const allKeys = uploadedFiles.map(file => file.name);
       if (archiveExists) {
-        await this.deleteObjectByKey(archiveKey);
-        deletedCount++;
-        console.log(`Arhivă ștearsă: ${archiveKey}`);
+        allKeys.push(archiveKey);
       }
       
-      console.log(`S-au șters ${deletedCount} fișiere pentru transferul ${transferId}`);
+      // 4. Lansăm toate operațiile de ștergere în paralel
+      const deletePromises = allKeys.map(async (key) => {
+        try {
+          await this.deleteObjectByKey(key);
+          return true;
+        } catch (error) {
+          console.error(`Eroare la ștergerea obiectului ${key}:`, error);
+          return false;
+        }
+      });
+      
+      // 5. Așteptăm finalizarea tuturor ștergerilor
+      const results = await Promise.all(deletePromises);
+      const deletedCount = results.filter(Boolean).length;
+      
+      console.log(`S-au șters ${deletedCount} fișiere pentru transferul ${transferId} (mod nelimitat)`);
       return deletedCount;
     } catch (error) {
-      console.error(`Eroare la ștergerea fișierelor pentru transferul ${transferId}:`, error);
+      console.error(`Eroare la ștergerea fișierelor pentru transferul ${transferId} (mod nelimitat):`, error);
       throw error;
     }
   }
@@ -592,6 +1044,115 @@ export class R2StorageService implements StorageProvider {
       return true;
     } catch (error) {
       console.error(`Eroare la crearea fișierului gol: ${key}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Descarcă o arhivă cu optimizări speciale pentru streaming
+   * @param transferId ID-ul transferului 
+   * @param archiveKey Cheia la care este stocată arhiva
+   * @returns Stream Readable optimizat pentru arhive mari
+   */
+  async downloadArchive(transferId: string, archiveKey: string): Promise<Readable> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: archiveKey,
+        // Adăugăm headere specifice pentru binare
+        ResponseContentType: 'application/zip',
+        ResponseContentDisposition: `attachment; filename="${archiveKey.split('/').pop()}"`
+      });
+
+      const response = await this.client.send(command);
+      
+      if (!response.Body) {
+        throw new Error(`Nu s-a putut obține arhiva: ${archiveKey}`);
+      }
+
+      const stream = response.Body as Readable;
+      
+      // Optimizare: Creăm un stream intermediar pentru a preveni închiderea prematură a stream-ului original
+      const passThrough = new PassThrough({
+        // Configurăm buffer-ele pentru streaming rapid 
+        highWaterMark: 8 * 1024 * 1024, // Creștem la 8MB buffer pentru performanță maximă
+        allowHalfOpen: true,
+        emitClose: false // Prevenim emiterea evenimentului 'close' care poate cauza probleme
+      });
+      
+      // Configurăm gestionarea streams pentru prevenirea erorilor ERR_STREAM_PREMATURE_CLOSE
+      stream.pipe(passThrough, { end: false }); // Nu propagăm end event automat
+      
+      // Adăugăm monitorizare pentru evenimente
+      let bytesReceived = 0;
+      const totalBytes = response.ContentLength || 0;
+      
+      stream.on('data', (chunk) => {
+        bytesReceived += chunk.length;
+        
+        if (totalBytes > 0) {
+          const percentage = Math.round((bytesReceived / totalBytes) * 100);
+          if (percentage % 10 === 0 && percentage > 0) { // Log la fiecare 10%
+            console.log(`Descărcare arhivă ${archiveKey}: ${percentage}% (${bytesReceived}/${totalBytes} bytes)`);
+          }
+        }
+      });
+      
+      // Adăugăm handler pentru end pe stream-ul original
+      stream.on('end', () => {
+        console.log(`Stream-ul original pentru arhiva ${archiveKey} s-a terminat: ${bytesReceived} bytes transferați`);
+        
+        // Asigurăm un delay mai mare înainte de a închide passThrough
+        setTimeout(() => {
+          try {
+            passThrough.end();
+            console.log(`Stream-ul PassThrough pentru arhiva ${archiveKey} a fost închis cu succes`);
+          } catch (e) {
+            console.error(`Eroare la închiderea normală a stream-ului PassThrough pentru arhiva ${archiveKey}:`, e);
+          }
+        }, 500); // Creștem delay-ul la 500ms pentru a asigura transmisia completă a datelor
+      });
+      
+      // Adăugăm handler pentru erori pe stream-ul original
+      stream.on('error', (err) => {
+        console.error(`Eroare în stream-ul original pentru arhiva ${archiveKey}:`, err);
+        
+        // Nu distrugem imediat - așteptăm mai mult pentru a permite continuarea transmisiei
+        setTimeout(() => {
+          try {
+            passThrough.end();
+            console.log(`Stream-ul PassThrough pentru arhiva ${archiveKey} a fost închis după eroare`);
+          } catch (e) {
+            console.error(`Eroare secundară la închiderea stream-ului PassThrough pentru arhiva ${archiveKey}:`, e);
+          }
+        }, 300); // Creștem la 300ms pentru mai multă siguranță
+      });
+      
+      // Adăugăm eveniment pentru a detecta când PassThrough se închide prematur
+      passThrough.on('error', (err) => {
+        console.error(`Eroare în stream-ul PassThrough pentru arhiva ${archiveKey}:`, err);
+      });
+      
+      // Adăugăm metode pentru a facilita închiderea forțată a stream-urilor din exterior
+      const originalDestroy = passThrough.destroy.bind(passThrough);
+      
+      // Suprascriem metoda destroy pentru a închide și stream-ul original
+      passThrough.destroy = function(error?: Error) {
+        try {
+          // Încercăm să închidem stream-ul original
+          stream.destroy(error);
+        } catch (e) {
+          console.error(`Eroare la distrugerea stream-ului original pentru arhiva ${archiveKey}:`, e);
+        }
+        
+        // Apelăm metoda originală destroy
+        return originalDestroy(error);
+      };
+      
+      console.log(`Stream pregătit pentru arhiva: ${archiveKey} (${totalBytes} bytes)`);
+      return passThrough;
+    } catch (error) {
+      console.error(`Eroare la descărcarea arhivei ${archiveKey}:`, error);
       throw error;
     }
   }

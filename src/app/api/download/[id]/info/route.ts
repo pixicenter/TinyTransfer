@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTransferById, getTransferFiles, recordTransferView, logAccess} from '../../../../../lib/db';
+import { getTransferById, getTransferFiles, logAccess} from '../../../../../lib/db';
 
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
 
-// Add this interface after Transfer
-interface AppSettings {
-  id: number;
-  app_name: string;
-  logo_url: string | null;
-  logo_url_dark: string | null;
-  logo_url_light: string | null;
-  logo_type: string;
-  theme: string;
-  language: string;
-  slideshow_interval: number;
-  slideshow_effect: string;
-}
 
 
 // Add this interface for Transfer

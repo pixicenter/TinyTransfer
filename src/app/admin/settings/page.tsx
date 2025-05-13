@@ -295,17 +295,17 @@ export default function AdminSettingsPage() {
       let canUpdateDb = false;
       
       if (logoPath.startsWith('http')) {
-        console.log(`Logo is an external URL: ${logoPath}. It will be deleted from settings.`);
+        // console.log(`Logo is an external URL: ${logoPath}. It will be deleted from settings.`);
         canUpdateDb = true;
       } else {
-        console.log(`Attempting to delete local logo: ${logoPath}`);
+        // console.log(`Attempting to delete local logo: ${logoPath}`);
       const response = await fetch(`/api/logo?path=${encodeURIComponent(logoPath)}`, {
         method: 'DELETE',
         credentials: 'include'
       });
       
       if (response.ok) {
-          console.log(`Local logo ${logoPath} has been deleted successfully from server.`);
+          // console.log(`Local logo ${logoPath} has been deleted successfully from server.`);
           canUpdateDb = true;
         } else {
           const errorData = await response.json();

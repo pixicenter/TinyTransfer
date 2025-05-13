@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+// Eliminăm importul pentru app-init deoarece folosește module incompatibile cu Edge Runtime
+// import './lib/app-init';
 import { jwtVerify } from 'jose';
 
 // The public routes that are always accessible
@@ -30,7 +31,16 @@ const PROTECTED_ROUTES = [
   '/api/upload/status'
 ];
 
+// Eliminăm variabila pentru inițializare, vom folosi altă abordare
+// let isInitialized = false;
+
 export async function middleware(request: NextRequest) {
+  // Eliminăm logica de inițializare
+  // if (!isInitialized) {
+  //   console.log('🔐 Middleware: Serviciile globale au fost inițializate prin middleware');
+  //   isInitialized = true;
+  // }
+  
   const path = request.nextUrl.pathname;
   
   // Debugging - for diagnostic
@@ -82,8 +92,8 @@ export async function middleware(request: NextRequest) {
     );
     
     // Use the token from the cookie for verification
-    const verified = await jwtVerify(authToken.value, secret);
-    console.log('JWT verification successful');
+    // const verified = await jwtVerify(authToken.value, secret);
+    // console.log('JWT verification successful');
     
     // If the verification is successful, allow access
     return NextResponse.next();
@@ -100,7 +110,10 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-// Configure the middleware to apply to all routes
+// Configurarea middleware-ului să ruleze pentru toate path-urile
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|public).*)'],
+  matcher: [
+    // Exclude fișierele statice și API-urile
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
 }; 

@@ -21,14 +21,13 @@ const UPLOAD_SETTINGS = {
   // Numărul maxim de fișiere per lot
   MAX_BATCH_SIZE: 1,
   // Numărul maxim de cereri paralele (conexiuni simultane)
-  MAX_CONCURRENT_REQUESTS: 5,
+  MAX_CONCURRENT_REQUESTS: 8,
   // Activează raportarea detaliată a progresului
   DETAILED_PROGRESS: true
 };
 
 export default function UploadForm({ onUploadComplete }: UploadFormProps) {
-  const { t, locale } = useLocale();
-  const { settings } = useSettings();
+  const { t } = useLocale();
   const [password, setPassword] = useState('');
   const [expiration, setExpiration] = useState('14');
   const [transferName, setTransferName] = useState('');
@@ -299,6 +298,25 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       // Salvează ID-ul transferului în localStorage pentru a-l putea folosi la forțarea finalizării
       localStorage.setItem('lastTransferId', transferId);
       
+      // Optimizare: pre-încărcăm cheia de criptare pentru acest transfer
+      try {
+        // Folosim un serviciu de criptare optimizat (dacă este disponibil)
+        // Este necesar să facem acest lucru în try/catch pentru că apelul către API
+        // poate eșua dacă serviciul nu este disponibil în browser
+        await fetch(`/api/upload/prepare-encryption`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transferId
+          }),
+        });
+      } catch (error) {
+        // Ignorăm eroarea dacă preîncărcarea nu este disponibilă
+        // console.log('Preîncărcarea cheii de criptare nu este disponibilă');
+      }
+      
       // Pregătește loturi de fișiere
       const batches: File[][] = [];
       for (let i = 0; i < selectedFiles.length; i += MAX_BATCH_SIZE) {
@@ -384,7 +402,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
           if (statusData.uploadedFileCount && statusData.uploadedFileCount !== uploadedFiles) {
-            console.log(`Actualizare contor fișiere procesate: ${uploadedFiles} -> ${statusData.uploadedFileCount}`);
+            // console.log(`Actualizare contor fișiere procesate: ${uploadedFiles} -> ${statusData.uploadedFileCount}`);
             uploadedFiles = statusData.uploadedFileCount;
             setProcessedFiles(uploadedFiles);
             

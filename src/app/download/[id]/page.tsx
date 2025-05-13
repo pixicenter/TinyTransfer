@@ -319,10 +319,10 @@ export default function DownloadPage() {
 
   // Determine the current image to display
   // Ensure that currentImageIndex is valid and the image is loaded or it's the only option
-  const currentImageToDisplay = 
-    isInitialized && slideImages.length > 0 && currentImageIndex < slideImages.length
-      ? slideImages[currentImageIndex]
-      : null; // Or a placeholder like { src: 'placeholder.jpg', loaded: true }
+  // const currentImageToDisplay = 
+  //   isInitialized && slideImages.length > 0 && currentImageIndex < slideImages.length
+  //     ? slideImages[currentImageIndex]
+  //     : null; // Or a placeholder like { src: 'placeholder.jpg', loaded: true }
 
   if (isLoading) {
     return (
@@ -427,7 +427,7 @@ export default function DownloadPage() {
           <div className="mb-6 text-center">
             <Link href="/" className="flex items-center justify-center transition-transform hover:scale-105 duration-300">
               {settings.logo_url ? (
-                <Image src={settings.logo_url} alt={settings.app_name} width={48} height={48} className="mr-3" />
+                <Image src={settings.logo_url} alt={'$transferInfo.name'} width={48} height={48} className="mr-3" />
               ) : (
                 <svg className="w-12 h-12 mr-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />

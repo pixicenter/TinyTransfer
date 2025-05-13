@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createTransfer, getTransferById, recordTransferDownload, logAccess, initTransferStats } from '../../../../lib/db';
+import { createTransfer, getTransferById, initTransferStats } from '../../../../lib/db';
 import { StorageFactory } from '../../../../services/StorageFactory';
 
 

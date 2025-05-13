@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Transfer ID is required' }, { status: 400 });
     }
 
-    console.log(`Încărcare fișier ${file.name} pentru transferul ${transferId}`);
+    // console.log(`Încărcare fișier ${file.name} pentru transferul ${transferId}`);
 
     // Obținem serviciul de stocare
     const storage = StorageFactory.getStorage();
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     try {
       // Încărcăm fișierul în R2
       const key = await storage.uploadFile(transferId, file);
-      console.log(`Fișier încărcat cu succes: ${key}`);
+      // console.log(`Fișier încărcat cu succes: ${key}`);
 
 
       return NextResponse.json({

@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.js",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "NODE_ENV=production node server.js",
+    "lint": "next lint",
+    "check-encryption": "node scripts/generate-encryption-keys.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.806.0",

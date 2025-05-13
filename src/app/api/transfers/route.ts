@@ -12,19 +12,6 @@ interface Transfer {
   transfer_password_hash: string | null;
 }
 
-// Add this interface next to the existing Transfer interface
-interface AppSettings {
-  id: number;
-  app_name: string;
-  logo_url: string | null;
-  logo_url_dark: string | null;
-  logo_url_light: string | null;
-  logo_type: string;
-  theme: string;
-  language: string;
-  slideshow_interval: number;
-  slideshow_effect: string;
-}
 
 // Route handler pentru listarea transferurilor
 export async function GET() {
@@ -98,8 +85,8 @@ export async function DELETE(request: Request) {
     // 1. Ștergem fișierele din storage (R2)
     const r2Service = new R2StorageService();
     try {
-      // Vom încerca să ștergem fișierele, dar vom continua chiar dacă eșuează
-      await r2Service.deleteTransferFiles(id);
+      // Folosim metoda cu paralelizare nelimitată pentru ștergere rapidă
+      await r2Service.deleteTransferFilesUnlimited(id);
     } catch (storageError) {
       console.error(`Eroare la ștergerea fișierelor din storage pentru transferul ${id}:`, storageError);
       // Nu returnăm eroare aici, continuăm cu ștergerea din baza de date

@@ -265,7 +265,7 @@ ${translate(language, 'emails.transfer.team', { appName: appName })}
     try {
       // Send the email
       const info = await transporter.sendMail(mailOptions);
-      console.log('Email sent:', info.messageId);
+      // console.log('Email sent:', info.messageId);
 
       // Update the email status for the successfully sent email
       updateEmailStatus.run(transferId);

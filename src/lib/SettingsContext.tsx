@@ -108,7 +108,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     try {
       setIsLoading(true);
       
-      console.log('Sending settings update to server:', newSettings);
+      // console.log('Sending settings update to server:', newSettings);
       
       const response = await fetch('/api/settings', {
         method: 'PUT',
@@ -121,7 +121,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       
       if (response.ok) {
         const updatedSettings = await response.json();
-        console.log('Received updated settings from server:', updatedSettings);
+        // console.log('Received updated settings from server:', updatedSettings);
         
         setSettings(updatedSettings);
         return updatedSettings;

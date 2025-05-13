@@ -21,12 +21,12 @@ export async function GET(
 ) {
   try {
     const transferId = params.id;
-    console.log(`Cerere informații pentru transferul ${transferId}`);
+    // console.log(`Cerere informații pentru transferul ${transferId}`);
 
     // Obținem transferul din bază
     const transfer = getTransferById.get(transferId) as Transfer;
     if (!transfer) {
-      console.log(`Transfer cu ID-ul ${transferId} nu a fost găsit`);
+      // console.log(`Transfer cu ID-ul ${transferId} nu a fost găsit`);
       return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
     }
 
@@ -34,7 +34,7 @@ export async function GET(
     if (transfer.expires_at) {
       const expiresAt = new Date(transfer.expires_at);
       if (expiresAt < new Date()) {
-        console.log(`Transferul ${transferId} a expirat la ${expiresAt}`);
+        // console.log(`Transferul ${transferId} a expirat la ${expiresAt}`);
         return NextResponse.json(
           { error: 'Transfer has expired' },
           { status: 410 }

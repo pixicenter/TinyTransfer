@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { StorageFactory } from '../../../../services/StorageFactory';
-import { getTransfer, updateDownloadStats } from '../../../../lib/db';
+import { getTransfer, updateDownloadStats, recordTransferDownload, insertAccessLog } from '../../../../lib/db';
 import bcrypt from 'bcrypt';
 import { R2StorageService } from '../../../../services/R2StorageService';
 import archiver from 'archiver';
-import stream from 'stream';
+import stream, { Readable, PassThrough } from 'stream';
 
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
 
 // Configurăm route-ul pentru a dezactiva cache-ul
 export const dynamic = 'force-dynamic';
+
+// Funcție helper pentru a obține IP-ul clientului
+function getClientIp(headers: Headers): string {
+  return headers.get('x-forwarded-for') || 
+         headers.get('x-real-ip') || 
+         'unknown';
+}
 
 // Interfață pentru obiectul transfer din baza de date
 interface Transfer {
@@ -41,141 +47,269 @@ export async function GET(
     }
     // Folosim direct serviciul R2StorageService
     const r2Service = new R2StorageService();
+    
+    
     // Listăm fișierele pentru transfer
     const files = await r2Service.listFiles(id);
     if (!files || files.length === 0) {
       return new NextResponse('No files found for transfer', { status: 404 });
     }
 
-    // Streaming ZIP on-the-fly, fără buffering
-    const pass = new stream.PassThrough();
     
-    // Optimizat pentru streaming rapid
+    // Optimizat pentru streaming rapid și afișarea corectă a progresului în browser
+    // Dezactivăm complet compresia pentru toate fișierele (store = fără compresie)
     const archive = archiver('zip', { 
-      zlib: { level: 4 }, // Nivel de compresie scăzut pentru viteză
-      store: files.some(file => file.size > 10 * 1024 * 1024) // Folosim stocare fără compresie dacă există fișiere peste 10MB
+      store: true // Dezactivăm complet compresia pentru toate fișierele
     });
 
-    // Monitorizăm progresul
-    let bytesArchived = 0;
-    archive.on('data', (chunk) => {
-      bytesArchived += chunk.length;
-    });
-    
-    // Gestionăm erorile
-    archive.on('error', (err) => {
-      console.error('Eroare în timpul arhivării:', err);
-    });
-    
-    // Conectăm arhiva la stream-ul de output
-    archive.pipe(pass);
-
-    // Pregătim răspunsul pentru client imediat
-    const filename = encodeURIComponent(transfer.filename || `${id}.zip`);
-    
-    // Calculăm dimensiunea totală și o estimare a dimensiunii arhivei comprimate
+    // Calculăm dimensiunea totală a fișierelor
     let totalSize = 0;
-    let estimatedCompressedSize = 0;
     
-    // Factori de compresie estimați pentru diferite tipuri de fișiere
-    const compressionFactors = {
-      // Fișiere text - compresie bună (30-40% din dimensiunea originală)
-      text: 0.35,
-      // Fișiere deja comprimate - compresie minimă (95-98% din dimensiunea originală)
-      compressed: 0.97,
-      // Fișiere care se comprimă mediu (60-70% din dimensiunea originală)
-      medium: 0.65,
-      // Valoare implicită - compresie moderată (80% din dimensiunea originală)
-      default: 0.8
-    };
-    
-    // Extensii pentru fișiere deja comprimate (imagini, video, audio, arhive)
-    const compressedExtensions = [
-      'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg',
-      'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm',
-      'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac',
-      'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'
-    ];
-    
-    // Extensii pentru fișiere text (se comprimă bine)
-    const textExtensions = [
-      'txt', 'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'xml',
-      'md', 'csv', 'log', 'sql', 'php', 'py', 'java', 'c', 'cpp', 'h', 'cs',
-      'rb', 'pl', 'sh', 'bat', 'ps1', 'tex', 'doc', 'docx', 'rtf'
-    ];
-    
-    // Extensii pentru fișiere cu compresie medie
-    const mediumExtensions = [
-      'pdf', 'ppt', 'pptx', 'xls', 'xlsx', 'psd', 'ai', 'eps'
-    ];
-    
+    // Procesăm fiecare fișier doar pentru a calcula size total
     for (const file of files) {
-      const size = file.size || 0;
-      totalSize += size;
-      
-      // Obținem extensia fișierului
-      const extension = file.name.split('.').pop()?.toLowerCase() || '';
-      
-      let compressionFactor = compressionFactors.default;
-      
-      if (textExtensions.includes(extension)) {
-        compressionFactor = compressionFactors.text;
-      } else if (compressedExtensions.includes(extension)) {
-        compressionFactor = compressionFactors.compressed;
-      } else if (mediumExtensions.includes(extension)) {
-        compressionFactor = compressionFactors.medium;
-      }
-      
-      // Calculăm dimensiunea estimată după compresie pentru acest fișier
-      estimatedCompressedSize += Math.round(size * compressionFactor);
+      totalSize += file.size;
     }
     
-    // Adăugăm o marjă de siguranță de 5-10% pentru header-ele ZIP și metadata
-    const zipOverhead = Math.max(1024, Math.round(totalSize * 0.02)); // Minim 1KB overhead
-    const finalEstimatedSize = estimatedCompressedSize + zipOverhead;
+    // Adăugăm overhead pentru structura ZIP - o estimare mai precisă
+    // Pentru arhive fără compresie, dimensiunea e aproape identică cu suma fișierelor
+    // plus un overhead pentru structura ZIP (aproximativ 30 bytes per fișier pentru header)
+    // plus 22 bytes pentru end of central directory record
+    const zipHeaderPerFile = 30;
+    const zipCentralDirPerFile = 46;
+    const zipEndOfCentralDir = 22;
+    const zipOverhead = (files.length * (zipHeaderPerFile + zipCentralDirPerFile)) + zipEndOfCentralDir;
     
-    const response = new NextResponse(pass as unknown as ReadableStream, {
-      status: 200,
+    const estimatedArchiveSize = totalSize + zipOverhead;
+    
+    // Adăugăm o marjă minimă de siguranță (doar 5%)
+    // const safetyMargin = Math.max(estimatedArchiveSize * 0.05, 50 * 1024); // 5% sau minim 50KB
+    const finalEstimatedSize = estimatedArchiveSize;
+    
+    console.log(`Transfer ${id}: Dimensiune originală totală: ${totalSize} bytes`);
+    console.log(`Transfer ${id}: Overhead ZIP estimat: ${zipOverhead} bytes (${files.length} fișiere)`);
+    // console.log(`Transfer ${id}: Dimensiune estimată a arhivei: ${estimatedArchiveSize} bytes + marjă ${safetyMargin} bytes`);
+    console.log(`Transfer ${id}: Dimensiune finală raportată: ${finalEstimatedSize} bytes`);
+    
+    // Salvăm estimarea pentru monitorizare
+    const totalBytesEstimated = finalEstimatedSize;
+    
+    // Pregătim răspunsul HTTP
+    const safeFilename = transfer.filename || `${transfer.archive_name}.zip`;
+    const encodedFilename = encodeURIComponent(safeFilename.replace(/[^\w\s.-]/g, '_')); // Înlocuim caractere nepermise
+    
+    // Pregătim răspunsul HTTP
+    const responseInit: ResponseInit = {
       headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': String(finalEstimatedSize),
-        'X-Total-Files': String(files.length),
-        'X-Original-Size': String(totalSize),
-        'X-Content-Type-Options': 'nosniff',
+        'Content-Disposition': `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
+        'Content-Type': 'application/zip',
+        'Content-Transfer-Encoding': 'binary',
+        'Content-Length': finalEstimatedSize.toString(), // Folosim finalEstimatedSize care include marja
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': '0',
+        'Accept-Ranges': 'bytes',
+        'X-Original-Size': totalSize.toString(),
+        'X-Estimated-Size': finalEstimatedSize.toString(),
+        'X-Files-Count': files.length.toString(),
+        'X-Content-Type-Options': 'nosniff'
+      }
+    };
+
+    // Aici adaptăm pentru problema cu tipul PassThrough
+    // Convertim PassThrough la ReadableStream care este acceptat de Response
+    const readableStream = stream.Readable.toWeb(archive) as ReadableStream<Uint8Array>;
+    const response = new Response(readableStream, responseInit);
+    
+    // Adăugăm fișierele în arhivă (asincron)
+    const filesProcessed: Promise<void>[] = [];
+    
+    console.log(`Pregătire arhivă pentru transfer ${id} cu ${files.length} fișiere...`);
+
+    // Procesare asincronă a tuturor fișierelor - procesăm în loturi mici pentru mai multă stabilitate
+    // Împărțim fișierele în grupe de maxim 10 pentru procesare secvențială
+    const chunkSize = 10;
+    const fileChunks = [];
+    
+    for (let i = 0; i < files.length; i += chunkSize) {
+      fileChunks.push(files.slice(i, i + chunkSize));
+    }
+    
+    console.log(`Procesare ${files.length} fișiere în ${fileChunks.length} loturi de maxim ${chunkSize} fișiere`);
+
+    // Procesăm loturile secvențial pentru a evita problemele cu stream-urile multiple paralele
+    let processedFiles = 0;
+    
+    // Set pentru urmărirea stream-urilor active
+    const activeStreams = new Set<Readable | PassThrough>();
+    
+    // Funcție pentru procesarea asincronă a unui lot de fișiere
+    const processChunk = async (chunk: typeof files) => {
+      // Procesăm fișierele unul câte unul secvențial pentru a evita problemele cu stream-urile
+      for (const file of chunk) {
+        try {
+          // Obținem stream-ul pentru fișier (acum cu decriptare automată)
+          const fileStream = await r2Service.getFile(id, file.name);
+          
+          // Înregistrăm stream-ul în lista de stream-uri active
+          activeStreams.add(fileStream);
+          
+          // Creăm un stream intermediar pentru a preveni închiderea prematură
+          const bufferStream = new stream.PassThrough({ 
+            highWaterMark: 1024 * 1024, // Buffer mare pentru performanță
+            allowHalfOpen: true // Permite închiderea unei părți a stream-ului fără a închide cealaltă
+          });
+          
+          // Înregistrăm și buffer stream-ul
+          activeStreams.add(bufferStream);
+          
+          // Adăugăm monitorizare pentru evenimente
+          fileStream.on('error', (err) => {
+            console.error(`Eroare în stream-ul pentru fișierul ${file.name}:`, err);
+            bufferStream.destroy(err);
+            activeStreams.delete(fileStream);
+            activeStreams.delete(bufferStream);
+          });
+          
+          // Când stream-ul original se termină
+          fileStream.on('end', () => {
+            console.log(`Stream-ul pentru fișierul ${file.name} a fost citit complet`);
+            activeStreams.delete(fileStream);
+          });
+          
+          // Când buffer stream-ul se termină
+          bufferStream.on('end', () => {
+            activeStreams.delete(bufferStream);
+          });
+          
+          // Transferăm datele din fileStream în bufferStream
+          fileStream.pipe(bufferStream);
+          
+          // Adăugăm stream-ul intermediar la arhivă - NU fileStream direct
+          archive.append(bufferStream, { name: file.name });
+          
+          // Așteptăm ca fișierul să fie procesat complet
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              console.warn(`Timeout pentru procesarea fișierului ${file.name}, continuăm cu următorul`);
+              resolve(); // Continuăm cu următorul fișier chiar dacă acesta a avut timeout
+            }, 180000); // 3 minute timeout per fișier
+            
+            bufferStream.on('end', () => {
+              clearTimeout(timeout);
+              processedFiles++;
+              console.log(`Fișier adăugat la arhivă (${processedFiles}/${files.length}): ${file.name}`);
+              resolve();
+            });
+            
+            bufferStream.on('error', (err) => {
+              clearTimeout(timeout);
+              console.error(`Eroare la adăugarea fișierului ${file.name} la arhivă:`, err);
+              resolve(); // Continuăm cu următorul fișier chiar și în caz de eroare
+            });
+          });
+          
+        } catch (error) {
+          console.error(`Eroare la procesarea fișierului ${file.name}:`, error);
+        }
+      }
+      
+      return true;
+    };
+    
+    // Procesăm loturile secvențial
+    (async () => {
+      for (const chunk of fileChunks) {
+        await processChunk(chunk);
+      }
+      
+      // Finalizăm arhiva după ce toate loturile au fost procesate
+      console.log(`Finalizare arhivă pentru ${id} cu ${processedFiles}/${files.length} fișiere procesate`);
+      
+      // Timeout de siguranță pentru finalizarea arhivei - mai lung
+      const finalizeTimeout = setTimeout(() => {
+        console.warn('Timeout la finalizarea arhivei, forțăm închiderea');
+        try {
+          console.log(`Arhivare oprită forțat după timeout. Progres: ${totalBytesEstimated} bytes din estimarea de ${totalBytesEstimated} bytes (${Math.round(totalBytesEstimated * 100 / totalBytesEstimated)}%)`);
+          
+          // Închidem toate stream-urile active în caz de timeout
+          console.log(`Închiderea forțată a ${activeStreams.size} stream-uri active`);
+          activeStreams.forEach(stream => {
+            try {
+              if ('destroy' in stream && typeof stream.destroy === 'function') {
+                stream.destroy();
+              }
+            } catch (e) {
+              // Ignorăm erorile
+            }
+          });
+          
+          archive.abort();
+        } catch (e) {
+          console.error('Eroare la abort arhivă:', e);
+        }
+      }, 300000); // 5 minute timeout pentru finalizare
+      
+      // Încercăm finalizarea normală
+      try {
+        // Adăugăm un eveniment pentru a închide stream-urile la finalizare
+        archive.on('end', () => {
+          clearTimeout(finalizeTimeout);
+          console.log(`Arhiva pentru ${id} a fost finalizată cu succes. Închiderea tuturor stream-urilor active (${activeStreams.size})...`);
+          
+          // Am terminat arhiva, putem curăța toate stream-urile rămase
+          setTimeout(() => {
+            try {
+              console.log(`Curățare resurse pentru transferul ${id} după finalizarea cu succes a arhivei. Stream-uri active rămase: ${activeStreams.size}`);
+              
+              // Închiderea tuturor stream-urilor active rămase
+              activeStreams.forEach(stream => {
+                try {
+                  if ('destroy' in stream && typeof stream.destroy === 'function') {
+                    stream.destroy();
+                  }
+                } catch (destroyError) {
+                  // Ignorăm erorile
+                }
+              });
+              
+              // Curățăm setul
+              activeStreams.clear();
+              console.log(`Toate stream-urile pentru transferul ${id} au fost închise.`);
+            } catch (cleanupError) {
+              console.error(`Eroare la curățarea resurselor pentru ${id}:`, cleanupError);
+            }
+          }, 1000); // Așteptăm 1 secundă pentru a permite browser-ului să termine descărcarea
+        });
+        
+        archive.finalize();
+      } catch (finalizeError) {
+        console.error('Eroare la finalizarea arhivei:', finalizeError);
+        clearTimeout(finalizeTimeout);
+      }
+      
+      // Înregistrăm descărcarea în statistici
+      try {
+        updateDownloadStats.run(id);
+        recordTransferDownload.run(id);
+        
+        // Înregistrăm IP-ul și user agent-ul separat
+        insertAccessLog.run(id, getClientIp(req.headers), req.headers.get('user-agent') || 'unknown', 1); // 1 = este descărcare
+      } catch (statsError) {
+        console.error('Eroare la înregistrarea statisticilor:', statsError);
+      }
+    })().catch(error => {
+      console.error('Eroare la procesarea loturilor de fișiere:', error);
+      try {
+        archive.finalize();
+      } catch (finalizeError) {
+        console.error('Eroare la finalizarea arhivei după eroare:', finalizeError);
+        try {
+          archive.abort();
+        } catch (e) {
+          // Ignorăm erorile la abort
+        }
       }
     });
-    
-    // Sortăm fișierele crescător după dimensiune pentru streaming rapid
-    const sortedFiles = files
-      .filter(file => !file.name.endsWith('.zip'))
-      .sort((a, b) => (a.size || 0) - (b.size || 0));
-
-    // Procesăm fișierele în background
-    (async () => {
-      try {
-        // Adăugăm mai întâi fișierele mici pentru feedback imediat
-        for (const file of sortedFiles) {
-          const fileStream = await r2Service.downloadFileInChunks(id, file.name);
-          archive.append(fileStream, { name: file.name });
-          
-          // Pentru fișiere mari, așteptăm să începem transfer
-          // Acest lucru ajută să evităm eroarea de timeout
-          if (file.size > 50 * 1024 * 1024) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-        
-        await archive.finalize();
-        updateDownloadStats.run(id);
-      } catch (error) {
-        console.error(`Eroare la procesarea fișierelor: ${error}`);
-        archive.abort();
-      }
-    })();
     
     return response;
   } catch (error) {

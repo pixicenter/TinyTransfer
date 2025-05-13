@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -56,13 +55,13 @@ export async function POST(req: NextRequest) {
     
     // Generează ID-ul transferului bazat pe nume
     const transferId = generateShortId(body.transferName);
-    console.log(transferId);
+    // console.log(transferId);
     
     // Creează directorul temporar pentru acest transfer
     const transferDir = path.join(TMP_DIR, transferId);
     if (!fs.existsSync(transferDir)) {
       fs.mkdirSync(transferDir, { recursive: true });
-      console.log(transferDir);
+      // console.log(transferDir);
     }
     
     // Salvează metadata pentru acest transfer

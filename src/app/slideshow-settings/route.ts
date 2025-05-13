@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import db, { getAppSettings } from '../../lib/db';
+import { getAppSettings } from '../../lib/db';
 
 // This route needs to run on Node.js due to the SQLite operations
 export const runtime = 'nodejs';

@@ -9,6 +9,15 @@ export const dynamic = 'force-dynamic';
 // Dezactivează cache-ul pentru rută
 export const fetchCache = 'force-no-store';
 
+// Interfața pentru rezultatul încărcării unui fișier
+interface UploadResult {
+  name: string;
+  key: string;
+  size: number;
+  success: boolean;
+  error?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -23,36 +32,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Transfer ID is required' }, { status: 400 });
     }
 
-    console.log(`Procesare lot de ${files.length} fișiere pentru transferul ${transferId}`);
+    // console.log(`Procesare lot de ${files.length} fișiere pentru transferul ${transferId}`);
 
     // Obținem serviciul de stocare
     const storage = StorageFactory.getStorage();
 
-    // Procesăm fiecare fișier
-    const results = await Promise.all(
-      files.map(async (file, idx) => {
-        try {
-          const key = await storage.uploadFile(transferId, file);
-          return {
-            name: file.name,
-            key: key,
-            size: file.size,
-            success: true
-          };
-        } catch (error) {
-          console.error(`Eroare la încărcarea fișierului ${file.name}:`, error);
-          return {
-            name: file.name,
-            error: 'Failed to upload file',
-            success: false
-          };
-        }
-      })
-    );
+    // Utilizăm noua metodă de încărcare paralelă pentru performanță
+    // Aceasta va procesa toate fișierele în paralel, cu un număr limitat de conexiuni simultane
+    const results = await storage.uploadFilesParallel(transferId, files, 4);
 
     return NextResponse.json({
       success: true,
-      processedFiles: results.filter(r => r.success).length,
+      processedFiles: results.filter((r: UploadResult) => r.success).length,
       results: results
     });
 
