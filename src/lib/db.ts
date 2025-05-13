@@ -23,10 +23,7 @@ db.exec(`
     theme TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
     language TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('ro', 'en')),
     slideshow_interval INTEGER NOT NULL DEFAULT 6000,
-    slideshow_effect TEXT NOT NULL DEFAULT 'fade' CHECK (slideshow_effect IN ('fade', 'slide', 'zoom')),
-    encryption_enabled INTEGER DEFAULT 0,
-    encryption_key_source TEXT DEFAULT 'manual' CHECK (encryption_key_source IN ('manual', 'transfer_name', 'email', 'password', 'timestamp')),
-    encryption_manual_key TEXT DEFAULT NULL
+    slideshow_effect TEXT NOT NULL DEFAULT 'fade' CHECK (slideshow_effect IN ('fade', 'slide', 'zoom'))
   );
 
   -- Transfers table
@@ -73,19 +70,7 @@ db.exec(`
   INSERT OR IGNORE INTO app_settings (id, app_name, theme, language) VALUES (1, 'TinyTransfer', 'dark', 'en');
 `);
 
-// Check if the columns for encryption exist and add them if they don't
-const columns = db.prepare('PRAGMA table_info(transfers)').all();
-const columnNames = columns.map((col: any) => col.name);
-
-if (!columnNames.includes('is_encrypted')) {
-  db.exec('ALTER TABLE transfers ADD COLUMN is_encrypted INTEGER DEFAULT 0');
-}
-
-if (!columnNames.includes('encryption_key_source')) {
-  db.exec('ALTER TABLE transfers ADD COLUMN encryption_key_source TEXT DEFAULT NULL');
-}
-
-// Check if admin_email column exists in the settings table and add it if it doesn't
+// Check if the admin_email column exists in the settings table and add it if it doesn't
 const settingsColumns = db.prepare('PRAGMA table_info(settings)').all();
 const settingsColumnNames = settingsColumns.map((col: any) => col.name);
 
@@ -99,11 +84,13 @@ if (!settingsColumnNames.includes('admin_email')) {
   }
 }
 
+
+
 // Database helper functions
 export const getTransferById = db.prepare('SELECT * FROM transfers WHERE id = ?');
 export const createTransfer = db.prepare(`
-  INSERT INTO transfers (id, created_at, expires_at, archive_name, size_bytes, transfer_password_hash, is_encrypted, encryption_key_source)
-  VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
+  INSERT INTO transfers (id, created_at, expires_at, archive_name, size_bytes, transfer_password_hash)
+  VALUES (?, datetime('now'), ?, ?, ?, ?)
 `);
 export const deleteExpiredTransfers = db.prepare(`
   DELETE FROM transfers 
@@ -142,10 +129,23 @@ export const getTransferStats = db.prepare(`
   GROUP BY ts.id
 `);
 
-export const logAccess = db.prepare(`
+export const insertAccessLog = db.prepare(`
   INSERT INTO access_logs (transfer_id, ip_address, user_agent, is_download)
   VALUES (?, ?, ?, ?)
 `);
+
+export const updateTransferStats = db.prepare(`
+  UPDATE transfer_stats
+  SET link_views = link_views + 1,
+      last_accessed = datetime('now')
+  WHERE transfer_id = ?
+`);
+
+// Funcție helper pentru a înregistra accesul și a actualiza statisticile
+export function logAccess(transferId: string, ip: string, userAgent: string, isDownload: number) {
+  insertAccessLog.run(transferId, ip, userAgent, isDownload);
+  updateTransferStats.run(transferId);
+}
 
 export const updateEmailStatus = db.prepare(`
   UPDATE transfer_stats
@@ -165,11 +165,9 @@ export const createTransferWithStats = db.transaction((
   expiresAt, 
   archiveName, 
   sizeBytes, 
-  passwordHash,
-  isEncrypted = 0,
-  encryptionKeySource = null
+  passwordHash
 ) => {
-  createTransfer.run(id, expiresAt, archiveName, sizeBytes, passwordHash, isEncrypted, encryptionKeySource);
+  createTransfer.run(id, expiresAt, archiveName, sizeBytes, passwordHash);
   initTransferStats.run(id);
 });
 
@@ -196,9 +194,18 @@ export const getAppSettings = db.prepare('SELECT * FROM app_settings WHERE id = 
 export const updateAppSettings = db.prepare(`
   UPDATE app_settings
   SET app_name = ?, logo_url = ?, logo_url_dark = ?, logo_url_light = ?, logo_type = ?, 
-      theme = ?, language = ?, slideshow_interval = ?, slideshow_effect = ?,
-      encryption_enabled = ?, encryption_key_source = ?, encryption_manual_key = ?
+      theme = ?, language = ?, slideshow_interval = ?, slideshow_effect = ?
   WHERE id = 1
+`);
+
+// Funcție pentru obținerea unui transfer cu un singur apel
+export const getTransfer = db.prepare('SELECT * FROM transfers WHERE id = ?');
+
+// Funcție pentru actualizarea contorului de descărcări
+export const updateDownloadStats = db.prepare(`
+  UPDATE transfer_stats
+  SET downloads = downloads + 1, last_accessed = datetime('now')
+  WHERE transfer_id = ?
 `);
 
 export default db; 

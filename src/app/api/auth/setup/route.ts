@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
       
       // Insert app settings with dark theme and English as defaults
       db.prepare(`
-        INSERT OR REPLACE INTO app_settings (id, app_name, theme, language, encryption_enabled, encryption_key_source) 
-        VALUES (1, 'TinyTransfer', 'dark', 'en', 1, 'transfer_name')
+        INSERT OR REPLACE INTO app_settings (id, app_name, theme, language) 
+        VALUES (1, 'TinyTransfer', 'dark', 'en')
       `).run();
     })();
 

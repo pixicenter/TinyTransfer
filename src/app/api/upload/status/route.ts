@@ -17,8 +17,6 @@ interface TransferMetadata {
   password: string | null;
   expiration: string;
   email: string | null;
-  localEncryption: boolean;
-  localEncryptionKeySource: string;
   createdAt: string;
   files: Array<{
     path: string;

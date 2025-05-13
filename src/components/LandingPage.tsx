@@ -323,77 +323,6 @@ const StepCard = ({ number, title, description }: { number: number, title: strin
   );
 };
 
-// Security Section Component - NEW
-const SecuritySection = ({ styles, t }: { styles: any, t: any }) => {
-  return (
-    <section className={`py-16 px-6`}>
-      <div className="container mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="grid md:grid-cols-2 gap-12 items-center"
-        >
-          <div className="order-2 md:order-1">
-            <div className="flex items-center mb-6">
-              <div className="w-16 h-16 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mr-5 p-2 shadow-md">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <h2 className={`text-3xl font-bold ${styles.headingText}`}>{t('learnMore.security.title')}</h2>
-            </div>
-            <p className={`${styles.subText} text-lg mb-5`}>{t('learnMore.security.description1')}</p>
-            <p className={`${styles.subText} mb-8`}>{t('learnMore.security.description2')}</p>
-            
-            <div className="space-y-6">
-              <div>
-                <h4 className={`text-xl font-semibold mb-3 text-indigo-600 dark:text-indigo-400`}>{t('learnMore.security.featuresTitle')}</h4>
-                <ul className={`list-disc list-inside space-y-2 ${styles.subText} text-sm`}>
-                  <li>{t('learnMore.security.point1')}</li>
-                  <li>{t('learnMore.security.point2')}</li>
-                  <li>{t('learnMore.security.point3')}</li>
-                </ul>
-              </div>
-              <div>
-                <h4 className={`text-xl font-semibold mb-3 text-indigo-600 dark:text-indigo-400`}>{t('learnMore.security.encryptionTitle')}</h4>
-                <div className="grid grid-cols-1 gap-4 text-sm">
-                  <div className={`p-4 border rounded-lg ${styles.border} bg-white/5 dark:bg-gray-700/20`}>
-                    <h5 className="font-semibold mb-1">{t('learnMore.security.encryption1')}</h5>
-                    <p className="text-xs opacity-80">{t('learnMore.security.encryption1Desc')}</p>
-                  </div>
-                  <div className={`p-4 border rounded-lg ${styles.border} bg-white/5 dark:bg-gray-700/20`}>
-                    <h5 className="font-semibold mb-1">{t('learnMore.security.encryption2')}</h5>
-                    <p className="text-xs opacity-80">{t('learnMore.security.encryption2Desc')}</p>
-                  </div>
-                  <div className={`p-4 border rounded-lg ${styles.border} bg-white/5 dark:bg-gray-700/20`}>
-                    <h5 className="font-semibold mb-1">{t('learnMore.security.encryption3')}</h5>
-                    <p className="text-xs opacity-80">{t('learnMore.security.encryption3Desc')}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <motion.div 
-            className="order-1 md:order-2 flex justify-center items-center"
-            initial={{ opacity: 0, scale: 0.8, x: 50 }}
-            whileInView={{ opacity: 1, scale: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.7, delay: 0.2 }}
-          >
-            {/* Placeholder for an image or illustration */}
-            <div className={`w-full aspect-square max-w-md bg-gradient-to-br from-indigo-500/30 to-purple-500/30 rounded-xl flex items-center justify-center shadow-xl p-6`}>
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-32 w-32 text-indigo-300 opacity-70" viewBox="0 0 20 20" fill="currentColor">
-                 <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-               </svg>
-            </div>
-          </motion.div>
-        </motion.div>
-      </div>
-    </section>
-  );
-};
 
 // Simplicity Section Component - NEW
 const SimplicitySection = ({ styles, t }: { styles: any, t: any }) => {
@@ -1457,16 +1386,8 @@ export default function LandingPage() {
           </motion.p>
         </div>
         
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <FeatureCard 
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            }
-            title={t('landing.features.security.title')}
-            description={t('landing.features.security.description')}
-          />
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          
           <FeatureCard 
             icon={
               <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" viewBox="0 0 20 20" fill="currentColor">
@@ -1577,7 +1498,6 @@ export default function LandingPage() {
       </section>
 
       {/* Individual Feature Sections */}
-      <SecuritySection styles={styles} t={t} />
       <SimplicitySection styles={styles} t={t} />
       <ControlSection styles={styles} t={t} />
       <PrivacySection styles={styles} t={t} />

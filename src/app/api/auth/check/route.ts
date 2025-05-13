@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { jwtVerify } from 'jose';
 import db from '../../../../lib/db';
-import { CleanupService } from '../../../../services/CleanupService';
-
-CleanupService.initialize();
 
 export async function GET(request: NextRequest) {
   try {

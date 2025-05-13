@@ -102,10 +102,6 @@ const en = {
     totalFiles: 'Total files',
     availableStorage: 'Available storage',
     viewAllTransfers: 'View all transfers',
-    encryptionStatus: 'Encryption Status',
-    encryptionEnabled: 'Encryption Enabled',
-    encryptionDisabled: 'Encryption Disabled',
-    encryptionKeyType: 'Key Source:',
   },
   transfers: {
     title: 'My Transfers',
@@ -136,8 +132,6 @@ const en = {
     emailAddress: 'Email address',
     sendingEmail: 'Sending...',
     emailSuccess: 'Email sent successfully!',
-    encrypted: 'Encrypted',
-    notEncrypted: 'Not Encrypted',
     uploading: 'Uploading...',
     uploadComplete: 'Upload complete!',
     uploadError: 'Upload error',
@@ -158,10 +152,12 @@ const en = {
     extendExpirationTitle: 'Extend Transfer Expiration',
     currentExpiration: 'Current Expiration',
     expirationOptions: {
+      '2-minutes': 'Expire in 2 minutes (test)',
       '1-month': 'Extend by 1 Month',
       '3-months': 'Extend by 3 Months',
       permanent: 'Set to Permanent (No Expiration)'
-    }
+    },
+    passwordProtected: 'Password Protected'
   },
   upload: {
     title: 'Upload files',
@@ -170,7 +166,6 @@ const en = {
     uploading: 'Uploading...',
     uploadingFiles: 'Uploading files...',
     archivingFiles: 'Archiving files...',
-    encryptingFiles: 'Encrypting files...',
     completingTransfer: 'Completing transfer...',
     uploadComplete: 'Upload complete',
     uploadFailed: 'Upload failed',
@@ -181,8 +176,6 @@ const en = {
     transferNamePlaceholder: 'If not completed, the first file name will be used',
     password: 'Password (optional)',
     passwordPlaceholder: 'Set a password for download',
-    passwordRequiredNote: 'Password is required because transfer encryption is based on password.',
-    encryptionPasswordInfo: 'This transfer will be encrypted using the password you enter. Password is mandatory and will be required to download the files.',
     expiration: 'Expires in',
     days: 'days',
     never: 'Never',
@@ -215,7 +208,6 @@ const en = {
     totalSize: 'Total size:',
     welcome: 'Secure file transfer',
     description: 'Download files securely, quickly and without registration.',
-    securityNote: 'All transfers are encrypted and protected.',
   },
   settings: {
     title: 'Settings',
@@ -278,18 +270,6 @@ const en = {
     deleteFailed: 'Error deleting image.',
     galleryLoadFailed: 'Error loading gallery images.',
     
-    // Encryption settings
-    encryption: 'Encryption Settings',
-    encryptionEnable: 'Enable file encryption',
-    encryptionKeySource: 'Encryption key source',
-    encryptionKeySourceHelp: 'Choose how the encryption key will be generated for transferred files',
-    encryptionKeySourceManual: 'Manual key',
-    encryptionKeySourceTransferName: 'Transfer name',
-    encryptionKeySourceEmail: 'Recipient email',
-    encryptionKeySourcePassword: 'Transfer password',
-    encryptionKeySourceTimestamp: 'Creation timestamp',
-    encryptionManualKey: 'Manual encryption key',
-    encryptionManualKeyHelp: 'Enter a custom key for file encryption (minimum 16 characters)',
   },
   errors: {
     fileRequired: 'Please select at least one file',
@@ -324,15 +304,7 @@ const en = {
     adminSetupCheckError: 'Error checking admin setup',
     failedToUpdateExpiration: 'Failed to update transfer expiration. Please try again.',
   },
-  encryption: {
-    fileEncrypted: 'This transfer is encrypted',
-    manualKey: 'manual key',
-    transferNameKey: 'transfer name',
-    passwordKey: 'transfer password',
-    emailKey: 'email',
-    timestampKey: 'timestamp',
-    willDecrypt: 'File will be decrypted automatically on download.',
-  },
+  
   // Email translations
   emails: {
     transfer: {
@@ -350,7 +322,7 @@ const en = {
       doesNotExpire: 'does not expire',
       team: '{appName} Team',
       downloadButton: 'Download files',
-      allRightsReserved: 'All rights reserved - Cristian Turcu'
+      allRightsReserved: 'All rights reserved - CristianTurcu.ro'
     }
   },
   landing: {
@@ -365,11 +337,6 @@ const en = {
       title: 'Why Choose TinyTransfer',
       subtitle: 'Powerful features for secure file sharing',
       learnMore: 'Learn More',
-      security: {
-        title: 'Enhanced Security',
-        description: 'End-to-end encryption keeps your files protected at all times',
-        highlight: 'Military-grade encryption algorithms'
-      },
       simplicity: {
         title: 'Effortless Sharing',
         description: 'Simple interface to upload and share in just a few clicks',
@@ -401,25 +368,6 @@ const en = {
         title: 'Track',
         description: 'Monitor downloads and access statistics',
       },
-    },
-    security: {
-      title: 'Enhanced Security',
-      description1: 'TinyTransfer uses modern encryption methods to keep your files secure during transfer and storage.',
-      description2: 'Our security features include:',
-      point1: 'End-to-end encryption for all file transfers',
-      point2: 'Multiple encryption key options to suit your security needs',
-      point3: 'Password protection for additional security layers',
-      featuresTitle: 'Security Features',
-      encryptionTitle: 'Encryption Options',
-      encryptionDescription: 'Multiple encryption methods to ensure your files are secure.',
-      encryption1: 'Password-based Encryption',
-      encryption1Desc: 'Files are encrypted with a password of your choice.',
-      encryption2: 'Key-based Encryption',
-      encryption2Desc: 'Uses a unique key for advanced encryption.',
-      encryption3: 'Timestamp Encryption',
-      encryption3Desc: 'Encryption based on the creation timestamp of the transfer.',
-      securityLevel: 'Enterprise-grade Protection',
-      securityLevelDesc: 'All your transfers are protected with the same level of security used by major corporations.'
     },
     simplicity: {
       title: 'Effortless Sharing',
@@ -515,25 +463,6 @@ const en = {
     overview: {
       title: 'Discover TinyTransfer',
       description: 'Secure, fast, and simple file transfer platform designed for your needs.'
-    },
-    security: {
-      title: 'Enhanced Security',
-      description1: 'TinyTransfer uses modern encryption methods to keep your files secure during transfer and storage.',
-      description2: 'Our security features include:',
-      point1: 'End-to-end encryption for all file transfers',
-      point2: 'Multiple encryption key options to suit your security needs',
-      point3: 'Password protection for additional security layers',
-      featuresTitle: 'Security Features',
-      encryptionTitle: 'Encryption Options',
-      encryptionDescription: 'Multiple encryption methods to ensure your files are secure.',
-      encryption1: 'Password-based Encryption',
-      encryption1Desc: 'Files are encrypted with a password of your choice.',
-      encryption2: 'Key-based Encryption',
-      encryption2Desc: 'Uses a unique key for advanced encryption.',
-      encryption3: 'Timestamp Encryption',
-      encryption3Desc: 'Encryption based on the creation timestamp of the transfer.',
-      securityLevel: 'Enterprise-grade Protection',
-      securityLevelDesc: 'All your transfers are protected with the same level of security used by major corporations.'
     },
     simplicity: {
       title: 'Effortless Sharing',

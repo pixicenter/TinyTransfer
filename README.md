@@ -1,10 +1,10 @@
 # TinyTransfer - Secure File Transfer Application
 
-A secure file transfer application built with Next.js, allowing users to upload files and share them via secure links with optional encryption.
+A secure file transfer application built with Next.js, allowing users to upload files and share them via links and email.
 
 ## Features
 
-- Secure file uploads with optional encryption
+
 - Password protection for transfers
 - Automatic file archiving
 - Configurable file expiration
@@ -136,7 +136,6 @@ NODE_ENV=development
    - Theme and language preferences
    - Email settings
    - Slideshow configuration
-   - Encryption settings
 
 ## Usage
 
@@ -156,7 +155,6 @@ NODE_ENV=development
 1. Open the download link
 2. If you want the transfer to be password-protected, enter the password
 3. Click "Download Files"
-4. For encrypted transfers, files will be decrypted automatically on download
 
 ### Managing Transfers
 
@@ -177,8 +175,6 @@ The application supports:
 
 ## Security Features
 
-- File encryption on unpload. The files are archived and encrypted.
-- Multiple encryption key sources (password, transfer name, email, timestamp, manual key)
 - Password protection for transfers
 - Automatic file expiration
 - Secure admin authentication
@@ -289,7 +285,7 @@ sudo systemctl restart sendmail
 To customize the application:
 - Modify theme settings in `src/lib/useThemeStyles.tsx`
 - Add new languages in `src/lib/translations/`
-- Extend encryption options in relevant services
+- Add encryption options in relevant services
 
 ## Contributing
 
@@ -308,3 +304,84 @@ MIT
 ## Support
 
 For support, issues, or feature requests, please create an issue in the repository. 
+
+
+//NOTES
+
+The cleanup service has to be more intelligent, eventualy connected with the database so he can start on time to do the job, 
+parallel deleting transfers on the exact expiring date and time.
+
+1. Procesul de Upload
+Etapa de Inițializare
+Selectarea fișierelor:
+Utilizatorul selectează fișierele prin drag-and-drop sau butonul de selectare
+Sistemul validează mărimea și numărul fișierelor
+Inițializarea transferului:
+Se trimite un request la /api/upload/initialize cu:
+Numele transferului
+Numărul de fișiere
+Mărimea totală
+Opțiuni: parolă, perioadă de expirare, email destinatar
+Serverul generează un ID unic pentru transfer
+Se creează un director temporar pentru fișiere
+Se returnează ID-ul transferului către client
+Etapa de Upload
+Încărcarea fișierelor în loturi:
+Fișierele sunt împărțite în loturi (batches) pentru eficiență
+Pentru fiecare lot, se face request la /api/upload/batch
+Fișierele sunt procesate în paralel, dar se limitează numărul de cereri simultane
+Se afișează progresul încărcării în timp real
+Gestionarea pe server:
+Serviciul R2StorageService stochează fișierele în storage-ul Cloudflare R2
+Fiecare fișier primește un path unic bazat pe ID-ul transferului
+Se actualizează contorul de fișiere încărcate
+Etapa de Finalizare
+Finalizarea transferului:
+După încărcarea tuturor fișierelor, se trimite request la /api/upload/finalize
+Serverul verifică existența fișierelor
+Calculează dimensiunea totală
+Setează data de expirare conform opțiunii alese
+Hașurează parola (dacă există)
+Înregistrarea în baza de date:
+Se creează o înregistrare în tabela transfers
+Se adaugă fișierele în tabela files
+Se inițializează statisticile transferului
+Se generează link-ul de descărcare
+2. Procesul de Download
+Verificarea Transferului
+Accesarea link-ului:
+Utilizatorul accesează pagina /download/[id]
+Sistemul verifică:
+Dacă transferul există
+Dacă nu a expirat
+Dacă are protecție cu parolă
+Autentificare (dacă este cazul):
+Dacă transferul este protejat cu parolă, se solicită introducerea acesteia
+Parola este verificată prin API-ul /api/download/[id] (metoda POST)
+După validarea parolei, se permite descărcarea
+Descărcarea Arhivei
+Inițierea descărcării:
+La apăsarea butonului "Descarcă arhiva", se face request la /api/download/[id]
+Serverul:
+Listează fișierele transferului din R2 Storage
+Creează o arhivă ZIP "on-the-fly" (fără a o stoca temporar)
+Streamează arhiva direct către browser
+Monitorizarea și statistici:
+Se înregistrează descărcarea în baza de date
+Se actualizează statisticile de acces (access_logs)
+Se afișează progresul descărcării în interfața utilizatorului
+3. Mecanismul de Expirare și Curățare
+Setarea expirării:
+La crearea transferului, se stabilește data de expirare
+Opțiunile includ: 2 minute (test), 1 lună, 3 luni sau permanent
+Procesul automat de curățare:
+Serviciul CleanupService verifică transferurile expirate la fiecare 10 minute
+Pentru fiecare transfer expirat:
+Se șterg fișierele din storage-ul R2
+Se șterg înregistrările din baza de date în ordinea corectă (pentru a respecta constrângerile de cheie străină)
+Se înregistrează activitatea în fișierul de log
+Curățarea manuală prin cron:
+Se poate programa un cronjob pe server care apelează scriptul run-cleanup.js
+Acest script face un request la /api/cleanup pentru a forța curățarea
+Oferă o metodă mai fiabilă decât programarea internă din Node.js
+Acest flux de lucru asigură gestionarea eficientă a transferurilor de fișiere, cu accent pe securitate (parole, expirări automate) și experiența utilizatorului (progres în timp real, interfață intuitivă).

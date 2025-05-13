@@ -234,28 +234,6 @@ export default function DashboardPage() {
                     <span className={`text-sm font-medium ${settings.theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{t('dashboard.availableStorage')}</span>
                     <span className={`text-xl font-bold ${settings.theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`}>{formatBytes(stats.availableStorage)}</span>
                   </div>
-                  <div className={`flex items-center justify-between p-3 rounded-lg ${settings.theme === 'dark' ? 'bg-gray-900/30' : 'bg-gray-50'}`}>
-                    <span className={`text-sm font-medium ${settings.theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Status</span>
-                    <div className={`w-3 h-3 rounded-full mr-2 ${settings.encryption_enabled 
-                    ? 'bg-green-500 animate-pulse' 
-                    : 'bg-red-500'}`}>
-                  </div>
-                    <span className={`text-m font-medium ${settings.theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>{settings.encryption_enabled
-                      ? t('dashboard.encryptionEnabled')
-                      : t('dashboard.encryptionDisabled')}</span>
-                  </div>
-                  {settings.encryption_enabled && (
-                    <div className={`flex items-center justify-between p-3 rounded-lg ${settings.theme === 'dark' ? 'bg-gray-900/30' : 'bg-gray-50'}`}>
-                      <span className={`text-sm font-medium ${settings.theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{t('settings.encryptionKeySource')}</span>
-                      <span className={`text-m font-medium ${settings.theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                        {settings.encryption_key_source === 'manual' && t('settings.encryptionKeySourceManual')}
-                        {settings.encryption_key_source === 'transfer_name' && t('settings.encryptionKeySourceTransferName')}
-                        {settings.encryption_key_source === 'email' && t('settings.encryptionKeySourceEmail')}
-                        {settings.encryption_key_source === 'password' && t('settings.encryptionKeySourcePassword')}
-                        {settings.encryption_key_source === 'timestamp' && t('settings.encryptionKeySourceTimestamp')}
-                      </span>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <p className={`${subText} text-center py-4`}>{t('errors.statsLoadFailed')}</p>

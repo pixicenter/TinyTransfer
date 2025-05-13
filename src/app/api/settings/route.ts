@@ -17,9 +17,6 @@ interface AppSettings {
   language: string;
   slideshow_interval: number;
   slideshow_effect: string;
-  encryption_enabled: number | boolean;
-  encryption_key_source: string;
-  encryption_manual_key: string | null;
 }
 
 // Simple authentication check
@@ -90,10 +87,7 @@ export async function PUT(request: NextRequest) {
       theme, 
       language, 
       slideshow_interval, 
-      slideshow_effect,
-      encryption_enabled,
-      encryption_key_source,
-      encryption_manual_key
+      slideshow_effect
     } = data;
     
     // Simple validations
@@ -132,12 +126,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    if (encryption_key_source && !['manual', 'transfer_name', 'email', 'password', 'timestamp'].includes(encryption_key_source)) {
-      return NextResponse.json(
-        { error: 'The encryption key source is not valid' },
-        { status: 400 }
-      );
-    }
     
     // Update only the provided fields
     const currentSettings = getAppSettings.get() as AppSettings;
@@ -152,9 +140,6 @@ export async function PUT(request: NextRequest) {
       language: language !== undefined ? language : currentSettings.language,
       slideshow_interval: slideshow_interval !== undefined ? slideshow_interval : currentSettings.slideshow_interval,
       slideshow_effect: slideshow_effect !== undefined ? slideshow_effect : currentSettings.slideshow_effect,
-      encryption_enabled: encryption_enabled !== undefined ? (encryption_enabled ? 1 : 0) : currentSettings.encryption_enabled,
-      encryption_key_source: encryption_key_source !== undefined ? encryption_key_source : currentSettings.encryption_key_source,
-      encryption_manual_key: encryption_manual_key !== undefined ? encryption_manual_key : currentSettings.encryption_manual_key
     };
     
     updateAppSettings.run(
@@ -166,17 +151,13 @@ export async function PUT(request: NextRequest) {
       updatedSettings.theme,
       updatedSettings.language,
       updatedSettings.slideshow_interval,
-      updatedSettings.slideshow_effect,
-      updatedSettings.encryption_enabled,
-      updatedSettings.encryption_key_source,
-      updatedSettings.encryption_manual_key
+      updatedSettings.slideshow_effect
     );
     
     // Convert the values for the response
     return NextResponse.json({
       id: 1,
-      ...updatedSettings,
-      encryption_enabled: !!updatedSettings.encryption_enabled
+      ...updatedSettings
     });
   } catch (error) {
     console.error('Error updating settings:', error);

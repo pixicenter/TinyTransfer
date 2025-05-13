@@ -102,10 +102,6 @@ const ro = {
     totalFiles: 'Total fișiere',
     availableStorage: 'Spațiu disponibil',
     viewAllTransfers: 'Vezi toate transferurile',
-    encryptionStatus: 'Stare Criptare',
-    encryptionEnabled: 'Criptare Activată',
-    encryptionDisabled: 'Criptare Dezactivată',
-    encryptionKeyType: 'Sursă cheie:',
   },
   transfers: {
     title: 'Transferurile Mele',
@@ -141,6 +137,7 @@ const ro = {
     extendExpirationTitle: 'Prelungește Expirarea Transferului',
     currentExpiration: 'Expirare Curentă',
     expirationOptions: {
+      '2-minutes': 'Expiră în 2 minute (test)',
       '1-month': 'Prelungește cu 1 Lună',
       '3-months': 'Prelungește cu 3 Luni',
       permanent: 'Setează ca Permanent (Fără Expirare)'
@@ -168,6 +165,7 @@ const ro = {
     selectedFiles: 'Fișiere selectate:',
     noFilesSelected: 'Niciun fișier selectat',
     fileSizeLimit: 'Limită mărime fișier:',
+    passwordProtected: 'Protejat cu parolă'
   },
   upload: {
     title: 'Încarcă fișiere',
@@ -176,7 +174,6 @@ const ro = {
     uploading: 'Se încarcă...',
     uploadingFiles: 'Se încarcă fișiere...',
     archivingFiles: 'Se arhivează fișiere...',
-    encryptingFiles: 'Se criptizează fișiere...',
     completingTransfer: 'Se încarcă...',
     uploadComplete: 'Încărcare finalizată!',
     uploadFailed: 'Încărcare eșuată',
@@ -187,8 +184,6 @@ const ro = {
     transferNamePlaceholder: 'Dacă nu este finalizat, numele primului fișier va fi folosit',
     password: 'Parolă (opțional)',
     passwordPlaceholder: 'Setează o parolă pentru descărcare',
-    passwordRequiredNote: 'Parola este necesară deoarece criptarea transferului este bazată pe parolă.',
-    encryptionPasswordInfo: 'Acest transfer va fi criptat folosind parola pe care o introduceți. Parola este obligatorie și va fi necesară pentru descărcare.',
     expiration: 'Expiră în',
     days: 'zile',
     never: 'Niciodată',
@@ -283,19 +278,6 @@ const ro = {
     deleteSuccess: 'Imaginea a fost ștearsă cu succes!',
     deleteFailed: 'Eroare la ștergerea imaginii.',
     galleryLoadFailed: 'Eroare la încărcarea imaginilor din galerie.',
-    
-    // Encryption settings
-    encryption: 'Setări Criptare',
-    encryptionEnable: 'Activează criptarea fișierelor',
-    encryptionKeySource: 'Sursa cheii de criptare',
-    encryptionKeySourceHelp: 'Alegeți cum va fi generată cheia de criptare pentru fișierele transferate',
-    encryptionKeySourceManual: 'Cheie manuală',
-    encryptionKeySourceTransferName: 'Numele transferului',
-    encryptionKeySourceEmail: 'Email-ul destinatarului',
-    encryptionKeySourcePassword: 'Parola transferului',
-    encryptionKeySourceTimestamp: 'Timestamp-ul creării',
-    encryptionManualKey: 'Cheie manuală de criptare',
-    encryptionManualKeyHelp: 'Introduceți o cheie personalizată pentru criptarea fișierelor (minim 16 caractere)',
   },
   errors: {
     fileRequired: 'Te rugăm să selectezi cel puțin un fișier',
@@ -329,15 +311,6 @@ const ro = {
     deleteTransferFailed: 'Eroare la ștergerea transferului',
     failedToUpdateExpiration: 'Eroare la actualizarea expirării transferului. Te rugăm să încerci din nou.',
   },
-  encryption: {
-    fileEncrypted: 'Acest transfer este criptat',
-    manualKey: 'cheie manuală',
-    transferNameKey: 'nume transfer',
-    passwordKey: 'parolă transfer',
-    emailKey: 'email',
-    timestampKey: 'timestamp',
-    willDecrypt: 'Fișierul va fi decriptat automat la descărcare.',
-  },
   // Email translations
   emails: {
     transfer: {
@@ -355,7 +328,7 @@ const ro = {
       doesNotExpire: 'nu expiră',
       team: 'Echipa {appName}',
       downloadButton: 'Descarcă fișierele',
-      allRightsReserved: 'Toate drepturile rezervate - Cristian Turcu'
+      allRightsReserved: 'Toate drepturile rezervate - CristianTurcu.ro'
     }
   },
   landing: {
@@ -370,11 +343,6 @@ const ro = {
       title: 'De Ce Să Alegi TinyTransfer',
       subtitle: 'Funcționalități puternice pentru partajarea sigură a fișierelor',
       learnMore: 'Află Mai Multe',
-      security: {
-        title: 'Securitate Avansată',
-        description: 'Criptare end-to-end care îți menține fișierele protejate în permanență',
-        highlight: 'Algoritmi de criptare de nivel militar'
-      },
       simplicity: {
         title: 'Partajare Fără Efort',
         description: 'Interfață simplă pentru încărcare și partajare în doar câteva click-uri',
@@ -406,25 +374,6 @@ const ro = {
         title: 'Monitorizează',
         description: 'Urmărește descărcările și accesează statistici',
       },
-    },
-    security: {
-      title: 'Securitate Avansată',
-      description1: 'TinyTransfer folosește metode moderne de criptare pentru a menține fișierele tale în siguranță în timpul transferului și stocării.',
-      description2: 'Caracteristicile de securitate includ:',
-      point1: 'Criptare end-to-end pentru toate transferurile de fișiere',
-      point2: 'Multiple opțiuni de chei de criptare pentru a se potrivi nevoilor tale de securitate',
-      point3: 'Protecție cu parolă pentru straturi suplimentare de securitate',
-      featuresTitle: 'Caracteristici de Securitate',
-      encryptionTitle: 'Opțiuni de Criptare',
-      encryptionDescription: 'Multiple metode de criptare pentru a asigura securitatea fișierelor tale.',
-      encryption1: 'Criptare bazată pe parolă',
-      encryption1Desc: 'Fișierele sunt criptate cu o parolă aleasă de tine.',
-      encryption2: 'Criptare bazată pe cheie',
-      encryption2Desc: 'Folosește o cheie unică pentru criptare avansată.',
-      encryption3: 'Criptare bazată pe timestamp',
-      encryption3Desc: 'Criptare bazată pe timestamp-ul de creare al transferului.',
-      securityLevel: 'Protecție la nivel enterprise',
-      securityLevelDesc: 'Toate transferurile tale sunt protejate cu același nivel de securitate folosit de corporațiile majore.'
     },
     simplicity: {
       title: 'Partajare Fără Efort',
@@ -520,25 +469,6 @@ const ro = {
     overview: {
       title: 'Descoperă TinyTransfer',
       description: 'Platformă de transfer de fișiere sigură, rapidă și simplă, proiectată pentru nevoile tale.'
-    },
-    security: {
-      title: 'Securitate Avansată',
-      description1: 'TinyTransfer folosește metode moderne de criptare pentru a menține fișierele tale în siguranță în timpul transferului și stocării.',
-      description2: 'Caracteristicile noastre de securitate includ:',
-      point1: 'Criptare end-to-end pentru toate transferurile de fișiere',
-      point2: 'Mai multe opțiuni de chei de criptare pentru a se potrivi nevoilor tale de securitate',
-      point3: 'Protecție cu parolă pentru straturi suplimentare de securitate',
-      featuresTitle: 'Caracteristici de Securitate',
-      encryptionTitle: 'Opțiuni de Criptare',
-      encryptionDescription: 'Multiple metode de criptare pentru a asigura securitatea fișierelor tale.',
-      encryption1: 'Criptare bazată pe parolă',
-      encryption1Desc: 'Fișierele sunt criptate cu o parolă aleasă de tine.',
-      encryption2: 'Criptare bazată pe cheie',
-      encryption2Desc: 'Utilizează o cheie unică pentru criptare avansată.',
-      encryption3: 'Criptare timestamp',
-      encryption3Desc: 'Criptare bazată pe momentul creării transferului.',
-      securityLevel: 'Protecție de nivel Enterprise',
-      securityLevelDesc: 'Toate transferurile tale sunt protejate cu același nivel de securitate utilizat de companiile mari.'
     },
     simplicity: {
       title: 'Partajare Fără Efort',

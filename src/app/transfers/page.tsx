@@ -12,8 +12,7 @@ interface Transfer {
   expires_at: string | null;
   archive_name: string;
   size_bytes: number;
-  is_encrypted: boolean;
-  encryption_key_source: string | null;
+  transfer_password_hash: string | null;
   stats: {
     link_views: number;
     downloads: number;
@@ -482,10 +481,15 @@ export default function TransfersPage() {
                         </div>
                       )}
                       
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {transfer.archive_name}
+                          </h3>
+                        </div>
+                      </div>
+
                       <div className="mb-4">
-                        <h2 className={`text-xl font-semibold ${styles.cardTitle} flex items-center flex-wrap mb-2 truncate`}>
-                          {transfer.archive_name}
-                        </h2>
                         <span className={`text-sm font-normal ${styles.subText} bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md`}>
                           ID: {transfer.id}
                         </span>
@@ -509,25 +513,27 @@ export default function TransfersPage() {
                             {transfer.stats.downloads}
                           </span>
                         </div>
-                        <div className={`${transfer.is_encrypted ? styles.successBg : styles.warningBg} p-1.5 rounded-md inline-flex items-center`}>
-                          <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                          <span className={`text-xs font-medium ${transfer.is_encrypted ? styles.successText : styles.warningText}`}>
-                            {transfer.is_encrypted ? t('transfers.encrypted') : t('transfers.notEncrypted')}
-                          </span>
-                        </div>
+                        
+                        {transfer.transfer_password_hash && (
+                          <div className={`${styles.primaryBg}/50 p-1.5 rounded-md inline-flex items-center`}>
+                            <span className={`inline-flex items-center text-xs font-medium ${styles.primaryText}`}>
+                              <svg className="w-3 h-3 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                              {t('transfers.passwordProtected')}
+                            </span>
+                            </div>
+                          )}
+                        
                       </div>
                       
                       <div className="mb-4">
                         <p className={`${styles.subText} text-sm mb-1`}>
                           <span className="font-medium">{t('transfers.created')}:</span> {formatDate(transfer.created_at)}
                         </p>
-                        {transfer.expires_at && (
-                          <p className={`${styles.subText} text-sm mb-1`}>
-                            <span className="font-medium">{t('transfers.expires')}:</span> {formatDate(transfer.expires_at)}
-                          </p>
-                        )}
+                        <p className={`${styles.subText} text-sm mb-1`}>
+                          <span className="font-medium">{t('transfers.expires')}:</span> {transfer.expires_at ? formatDate(transfer.expires_at) : t('transfers.permanent')}
+                        </p>
                         <p className={`${styles.subText} text-sm mb-1`}>
                           <span className="font-medium">{t('transfers.totalSize')}:</span> {formatBytes(transfer.size_bytes)}
                         </p>
@@ -806,7 +812,7 @@ export default function TransfersPage() {
               <p className={`${styles.subText} mb-6`}>{t('transfers.archiveNameLabel')}: {selectedTransferForExtension.archive_name}</p>
 
               <div className="space-y-3 mb-6">
-                {[ '1-month', '3-months', 'permanent'].map(period => (
+                {[ '2-minutes', '1-month', '3-months', 'permanent'].map(period => (
                   <button
                     key={period}
                     onClick={() => setNewExpiration(period)}

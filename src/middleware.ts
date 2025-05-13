@@ -18,6 +18,7 @@ const PROTECTED_ROUTES = [
   '/admin/settings',
   '/transfers',
   '/dashboard',
+  '/api/dashboard',
   '/api/settings',
   '/api/logo',
   '/api/gallery',

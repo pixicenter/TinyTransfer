@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import db, { getAppSettings } from '../../../lib/db';
-import { ArchiveService } from '../../../services/ArchiveService';
+import db from '../../../lib/db';
+import { R2StorageService } from '../../../services/R2StorageService';
 
 // Add an interface for Transfer
 interface Transfer {
@@ -10,9 +10,6 @@ interface Transfer {
   archive_name: string;
   size_bytes: number;
   transfer_password_hash: string | null;
-  is_encrypted: number | boolean;
-  encryption_key_source: string | null;
-  encryption_enabled: number | boolean;
 }
 
 // Add this interface next to the existing Transfer interface
@@ -27,9 +24,6 @@ interface AppSettings {
   language: string;
   slideshow_interval: number;
   slideshow_effect: string;
-  encryption_enabled: number | boolean;
-  encryption_key_source: string;
-  encryption_manual_key: string | null;
 }
 
 // Route handler pentru listarea transferurilor
@@ -37,8 +31,7 @@ export async function GET() {
   try {
     // Get all transfers with statistics
     const transfersQuery = db.prepare(`
-      SELECT t.id, t.created_at, t.expires_at, t.archive_name, t.size_bytes, 
-             t.is_encrypted, t.encryption_key_source,
+      SELECT t.id, t.created_at, t.expires_at, t.archive_name, t.size_bytes, t.transfer_password_hash,
              ts.link_views, ts.downloads, ts.email_sent, ts.email_error, ts.last_accessed,
              (SELECT COUNT(DISTINCT ip_address) FROM access_logs WHERE transfer_id = t.id) as unique_ip_count
       FROM transfers t
@@ -56,8 +49,6 @@ export async function GET() {
       const files = filesQuery.all(transfer.id);
       return {
         ...transfer,
-        is_encrypted: !!transfer.is_encrypted,
-        encryption_key_source: transfer.encryption_key_source,
         stats: {
           link_views: transfer.link_views || 0,
           downloads: transfer.downloads || 0,
@@ -104,7 +95,17 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Start a transaction to ensure atomic operations in the database
+    // 1. Ștergem fișierele din storage (R2)
+    const r2Service = new R2StorageService();
+    try {
+      // Vom încerca să ștergem fișierele, dar vom continua chiar dacă eșuează
+      await r2Service.deleteTransferFiles(id);
+    } catch (storageError) {
+      console.error(`Eroare la ștergerea fișierelor din storage pentru transferul ${id}:`, storageError);
+      // Nu returnăm eroare aici, continuăm cu ștergerea din baza de date
+    }
+
+    // 2. Start a transaction to ensure atomic operations in the database
     db.prepare('BEGIN TRANSACTION').run();
 
     try {
@@ -134,20 +135,10 @@ export async function DELETE(request: Request) {
       // Commit the transaction if everything went well
       db.prepare('COMMIT').run();
 
-      // Delete the physical file (archive) using ArchiveService
-      try {
-        console.log(`Attempting to delete the archive for transfer: ${id}`);
-        
-        // Use ArchiveService to delete the archive
-        ArchiveService.deleteArchive(id);
-        
-        console.log(`The archive for transfer ${id} has been deleted successfully`);
-      } catch (fileError) {
-        console.error('Error deleting the physical file:', fileError);
-        // Continue even if the file cannot be deleted, because the database has been updated
-      }
-
-      return NextResponse.json({ success: true, message: 'Transfer deleted successfully' });
+      return NextResponse.json({
+        success: true,
+        message: 'Transfer and associated files deleted successfully'
+      });
     } catch (dbError) {
       // Rollback to the previous state in case of an error
       db.prepare('ROLLBACK').run();
@@ -178,6 +169,11 @@ export async function PATCH(request: Request) {
     const now = new Date();
 
     switch (expiration) {
+      case '2-minutes':
+        // Adăugăm 2 minute la data curentă pentru testare
+        const twoMinutesLater = new Date(now.getTime() + 2 * 60 * 1000);
+        newExpiresAt = twoMinutesLater.toISOString();
+        break;
       case '1-month':
         newExpiresAt = new Date(now.setMonth(now.getMonth() + 1)).toISOString();
         break;
@@ -208,7 +204,6 @@ export async function PATCH(request: Request) {
     // Fetch the updated transfer to return it
     const updatedTransferQuery = db.prepare(`
       SELECT t.id, t.created_at, t.expires_at, t.archive_name, t.size_bytes, 
-             t.is_encrypted, t.encryption_key_source,
              ts.link_views, ts.downloads, ts.email_sent, ts.email_error, ts.last_accessed,
              (SELECT COUNT(DISTINCT ip_address) FROM access_logs WHERE transfer_id = t.id) as unique_ip_count
       FROM transfers t
@@ -236,7 +231,6 @@ export async function PATCH(request: Request) {
       message: 'Transfer expiration updated successfully',
       transfer: {
         ...updatedTransfer,
-        is_encrypted: !!updatedTransfer.is_encrypted,
         stats: {
             link_views: (updatedTransfer as any).link_views || 0,
             downloads: (updatedTransfer as any).downloads || 0,

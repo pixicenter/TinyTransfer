@@ -26,7 +26,7 @@ export async function GET() {
     }
     
     // Return only the settings needed for slideshow
-    // Without exposing sensitive information about encryption or other settings
+   
     const slideshowSettings = {
       slideshow_interval: settings.slideshow_interval,
       slideshow_effect: settings.slideshow_effect,

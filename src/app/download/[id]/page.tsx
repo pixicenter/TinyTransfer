@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useThemeStyles } from '../../../lib/useThemeStyles';
 import { useSettings } from '../../../lib/SettingsContext';
 import { useLocale } from '../../../lib/LocaleContext';
 import Link from 'next/link';
@@ -14,8 +13,6 @@ interface TransferInfo {
   expires_at: string | null;
   size_bytes: number;
   has_password: boolean;
-  is_encrypted: boolean;
-  encryption_key_source: string | null;
   files: Array<{
     original_name: string;
     size_bytes: number;
@@ -37,6 +34,7 @@ export default function DownloadPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isPasswordValid, setIsPasswordValid] = useState(false);
   
   // State for slideshow
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -44,6 +42,8 @@ export default function DownloadPage() {
   const [totalImages, setTotalImages] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const slideshowTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchedRef = useRef(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   // Initialize the slideshow by getting the total number of images
   useEffect(() => {
@@ -202,6 +202,8 @@ export default function DownloadPage() {
   }, [currentImageIndex, isInitialized, totalImages, settings.slideshow_interval, slideImages]);
 
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
     fetchTransferInfo();
     checkAuth();
   }, [id]);
@@ -232,20 +234,64 @@ export default function DownloadPage() {
     }
   };
 
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const response = await fetch(`/api/download/${id}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.error || t('download.wrongPassword'));
+        setIsPasswordValid(false);
+        return;
+      }
+      setIsPasswordValid(true);
+      handleDownload();
+    } catch (err) {
+      setError(t('download.wrongPassword'));
+      setIsPasswordValid(false);
+    }
+  };
+
   const handleDownload = async () => {
     setIsDownloading(true);
+    setDownloadProgress(0);
     
-    const queryParams = new URLSearchParams();
-    if (transferInfo?.has_password) {
-      queryParams.append('password', password);
-    }
-
-    window.location.href = `/api/download/${id}/archive?${queryParams}`;
-    
-    // Reset download state after a delay
-    setTimeout(() => {
+    try {
+      // Creăm un element <a> temporar pentru a declanșa descărcarea direct în pagina curentă
+      const downloadLink = document.createElement('a');
+      downloadLink.href = `/api/download/${id}`;
+      // Nu setăm atributul download pentru a lăsa browserul să gestioneze răspunsul Content-Disposition
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      // Simulăm progresul pentru feedback vizual
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 5;
+        if (progress > 95) {
+          clearInterval(interval);
+          setTimeout(() => {
+            setDownloadProgress(100);
+            setTimeout(() => {
+              setIsDownloading(false);
+              setDownloadProgress(0);
+            }, 500);
+          }, 500);
+        } else {
+          setDownloadProgress(progress);
+        }
+      }, 200);
+    } catch (err) {
+      console.error('Eroare la descărcare:', err);
       setIsDownloading(false);
-    }, 3000);
+      setDownloadProgress(0);
+    }
   };
 
   const handleLanguageChange = (newLocale: 'en' | 'ro') => {
@@ -296,9 +342,18 @@ export default function DownloadPage() {
           </svg>
           <h2 className="text-2xl font-bold text-white mb-4">{t('common.error')}</h2>
           <p className="text-pink-100 text-lg mb-6">{error}</p>
-          <Link href="/" className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+          <button
+            onClick={() => {
+              setError('');
+              setIsPasswordValid(false);
+              setPassword('');
+              setIsLoading(true);
+              fetchTransferInfo();
+            }}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
             {t('common.retry')}
-          </Link>
+          </button>
         </div>
       </div>
     );
@@ -367,15 +422,6 @@ export default function DownloadPage() {
       {/* Content */}
       <div className="min-h-screen w-full flex flex-col md:flex-row items-center justify-center md:justify-start p-4 md:p-8">
         <div className="backdrop-blur-xl backdrop-filter bg-white/5 rounded-2xl p-6 md:p-8 w-full md:w-[450px] mt-8 md:mt-12 md:ml-12 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.7)] hover:bg-white/10 transition-all duration-300 relative">
-          {/* Encryption indicator - moved to top right */}
-          {transferInfo.is_encrypted && (
-            <div className="absolute top-0 right-0 bg-white/60 text-green-900 px-3 py-1 text-xs font-medium rounded-tr-xl rounded-bl-xl flex items-center">
-              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              {t('encryption.fileEncrypted')}
-            </div>
-          )}
 
           {/* Logo and title */}
           <div className="mb-6 text-center">
@@ -457,8 +503,8 @@ export default function DownloadPage() {
           </div>
           
           {/* Password field (if applicable) */}
-          {transferInfo.has_password && (
-            <div className="mb-6">
+          {transferInfo.has_password && !isPasswordValid && (
+            <form className="mb-6" onSubmit={handlePasswordSubmit}>
               <label htmlFor="password" className="block text-lg font-medium mb-2 text-white/90">
                 {t('download.enterPassword')}
               </label>
@@ -477,49 +523,45 @@ export default function DownloadPage() {
                   </svg>
                 </div>
               </div>
-            </div>
+              {error && <p className="text-red-400 mt-2 text-sm">{error}</p>}
+              <button
+                type="submit"
+                className="mt-4 w-full py-3 px-6 rounded-lg font-medium text-center transition-all duration-300 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-xl transform hover:-translate-y-1"
+              >
+                {t('download.downloadButton')}
+              </button>
+            </form>
           )}
           
           {/* Download button */}
-          <button
-            onClick={handleDownload}
-            disabled={transferInfo.has_password && !password || isDownloading}
-            className={`w-full py-3 px-6 rounded-lg font-medium text-center transition-all duration-300
-              ${transferInfo.has_password && !password
-                ? 'bg-white/30 cursor-not-allowed text-white/50'
-                : isDownloading 
+          {(!transferInfo.has_password || isPasswordValid) && (
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className={`w-full py-3 px-6 rounded-lg font-medium text-center transition-all duration-300
+                ${isDownloading 
                   ? 'bg-green-600 cursor-wait text-white'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-xl transform hover:-translate-y-1'}`}
-          >
-            {isDownloading ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                {t('common.processing')}
-              </span>
-            ) : (
-              <span className="flex items-center justify-center">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                {t('download.downloadButton')}
-              </span>
-            )}
-          </button>
-          
-          {/* Security note
-          {transferInfo.is_encrypted && (
-          <div className="mt-6 text-center">
-            <p className="text-xs text-white/70 flex items-center justify-center">
-              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              {t('download.securityNote')}
-            </p>
-          </div>
-          )} */}
+            >
+              {isDownloading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {t('common.processing')} {downloadProgress}%
+                </span>
+              ) : (
+                <span className="flex items-center justify-center">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {t('download.downloadButton')}
+                </span>
+              )}
+            </button>
+          )}
+
         </div>
       </div>
     </>

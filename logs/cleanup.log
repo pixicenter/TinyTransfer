@@ -1,0 +1,9 @@
+[2025-05-13T18:36:27.902Z] CleanupService initialized from cleanup-init module
+[2025-05-13T18:36:27.903Z] CleanupService initialized from cleanup endpoint
+[2025-05-13T18:36:27.904Z] Manual cleanup initiated
+[2025-05-13T18:36:27.906Z] Found 1 expired transfers to clean up
+[2025-05-13T18:36:29.773Z] Cleanup completed: Deleted 1 expired transfers and 10 files from storage
+[2025-05-13T18:40:00.270Z] [2025-05-13T18:40:00.268Z] CleanupService scheduled check running...
+[2025-05-13T18:40:00.280Z] No expired transfers found to clean up at 2025-05-13T18:40:00.268Z
+[2025-05-13T18:40:18.608Z]  [37m[1m○[22m[39m Compiling /api/cleanup/status ...
+[2025-05-13T18:40:18.631Z]  [32m[1m✓[22m[39m Compiled /api/cleanup/status in 552ms (710 modules)

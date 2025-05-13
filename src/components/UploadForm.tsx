@@ -7,13 +7,12 @@ interface UploadFormProps {
 }
 
 // Define the types for the upload stages
-type UploadStage = 'uploading' | 'archiving' | 'encrypting' | 'completing';
+type UploadStage = 'uploading' | 'archiving' | 'completing';
 
 // Interfața pentru progresul fiecărei etape
 interface StageProgress {
   uploading: number;
   archiving: number;
-  encrypting: number;
   completing: number;
 }
 
@@ -39,8 +38,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState<UploadStage>('uploading');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [localEncryption, setLocalEncryption] = useState(false);
-  const [localEncryptionKeySource, setLocalEncryptionKeySource] = useState<'transfer_name' | 'timestamp'>('transfer_name');
   const [processedFiles, setProcessedFiles] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -53,15 +50,13 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [stageProgress, setStageProgress] = useState<StageProgress>({
     uploading: 0,
     archiving: 0,
-    encrypting: 0,
     completing: 0
   });
   
   // Ponderi pentru fiecare etapă în progresul global (total 100)
   const stageWeights = {
     uploading: 70,
-    archiving: 20,
-    encrypting: 5,
+    archiving: 25,
     completing: 5
   };
   
@@ -69,10 +64,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   const uploadStartTimeRef = useRef<number | null>(null);
   const totalUploadSizeRef = useRef<number>(0);
 
-  // Check if the password is required (when encryption is enabled and the key source is "password")
-  const isPasswordRequired = settings.encryption_enabled && settings.encryption_key_source === 'password';
-  const isEncryptionEnabled = settings.encryption_enabled;
-  const canUseLocalEncryption = !isEncryptionEnabled;
   
   // Function to get the current stage text
   const getStageText = (): string => {
@@ -81,8 +72,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         return t('upload.uploadingFiles');
       case 'archiving':
         return t('upload.archivingFiles');
-      case 'encrypting':
-        return t('upload.encryptingFiles');
       case 'completing':
         return t('upload.completingTransfer');
       default:
@@ -95,7 +84,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     const globalProgress = 
       (stageProgress.uploading * stageWeights.uploading / 100) +
       (stageProgress.archiving * stageWeights.archiving / 100) +
-      (stageProgress.encrypting * stageWeights.encrypting / 100) +
       (stageProgress.completing * stageWeights.completing / 100);
     
     setUploadProgress(Math.round(globalProgress));
@@ -148,7 +136,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       setEstimatedTimeRemaining(timeDisplay);
     }
   }, [processedFiles, isUploading, uploadStage, totalFiles]);
-  
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
@@ -231,11 +219,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       return;
     }
     
-    // Check if the password is required and if it has been completed
-    if (isPasswordRequired && !password.trim()) {
-      setError(t('errors.passwordRequired'));
-      return;
-    }
     
     // Check if the email is valid, if it has been entered
     if (email && !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
@@ -247,7 +230,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     setStageProgress({
       uploading: 0,
       archiving: 0,
-      encrypting: 0,
       completing: 0
     });
     
@@ -276,11 +258,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         formData.append('email', email);
       }
       
-      // Add local encryption settings if enabled
-      if (canUseLocalEncryption && localEncryption) {
-        formData.append('localEncryption', 'true');
-        formData.append('localEncryptionKeySource', localEncryptionKeySource);
-      }
       
       // Configurare pentru încărcarea în loturi
       const MAX_BATCH_SIZE = UPLOAD_SETTINGS.MAX_BATCH_SIZE;
@@ -302,11 +279,9 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           transferName: transferName.trim() || t('upload.title'),
           fileCount: selectedFiles.length,
           totalSize: getTotalSize(),
-          password,
-          expiration,
+          password: password || null,
+          expiration: expiration,
           email: email || '',
-          localEncryption: canUseLocalEncryption && localEncryption,
-          localEncryptionKeySource
         }),
       });
       
@@ -433,6 +408,9 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           },
           body: JSON.stringify({
             transferId,
+            archiveName: transferName.trim() || t('upload.title'),
+            expiresAt: expiration,
+            password: password || null,
             force
           }),
         });
@@ -472,26 +450,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       // Arhivarea s-a terminat
       updateStageProgress('archiving', 100);
       
-      // Etapa de criptare, dacă este activată
-      if (isEncryptionEnabled) {
-        setUploadStage('encrypting');
-        
-        // Simulare progres pentru criptare
-        let encryptProgress = 0;
-        const encryptInterval = setInterval(() => {
-          encryptProgress += 10;
-          if (encryptProgress > 100) {
-            clearInterval(encryptInterval);
-            encryptProgress = 100;
-          }
-          updateStageProgress('encrypting', encryptProgress);
-        }, 200);
-        
-        // Simulăm finalizarea criptării după un timp
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        clearInterval(encryptInterval);
-        updateStageProgress('encrypting', 100);
-      }
       
       // Etapa de finalizare
       setUploadStage('completing');
@@ -539,108 +497,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     }
   };
   
-  const handleForceFinalize = async () => {
-    if (!canForceFinalize) return;
-    
-    try {
-      setCanForceFinalize(false);
-      setUploadError(null);
-      
-      // Etapa de arhivare
-      setUploadStage('archiving');
-      updateStageProgress('archiving', 10);
-      
-      const transferId = localStorage.getItem('lastTransferId');
-      if (!transferId) {
-        throw new Error('Missing transfer ID');
-      }
-      
-      const finalizeResponse = await fetch(`/api/upload/finalize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          transferId,
-          force: true
-        }),
-      });
-      
-      if (!finalizeResponse.ok) {
-        throw new Error(`Failed to finalize upload: ${finalizeResponse.statusText}`);
-      }
-      
-      const result = await finalizeResponse.json();
-      
-      // Arhivarea s-a terminat
-      updateStageProgress('archiving', 100);
-      
-      // Etapa de criptare, dacă este activată
-      if (isEncryptionEnabled) {
-        setUploadStage('encrypting');
-        
-        // Simulare progres pentru criptare
-        let encryptProgress = 0;
-        const encryptInterval = setInterval(() => {
-          encryptProgress += 10;
-          if (encryptProgress > 100) {
-            clearInterval(encryptInterval);
-            encryptProgress = 100;
-          }
-          updateStageProgress('encrypting', encryptProgress);
-        }, 200);
-        
-        // Simulăm finalizarea criptării după un timp
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        clearInterval(encryptInterval);
-        updateStageProgress('encrypting', 100);
-      }
-      
-      // Etapa de finalizare
-      setUploadStage('completing');
-      
-      // Simulare progres pentru finalizare
-      let completingProgress = 0;
-      const completingInterval = setInterval(() => {
-        completingProgress += 20;
-        if (completingProgress > 100) {
-          clearInterval(completingInterval);
-          completingProgress = 100;
-        }
-        updateStageProgress('completing', completingProgress);
-      }, 100);
-      
-      // Simulăm finalizarea după un timp
-      await new Promise(resolve => setTimeout(resolve, 500));
-      clearInterval(completingInterval);
-      updateStageProgress('completing', 100);
-      
-      // Complete the process
-      setTimeout(() => {
-        setUploading(false);
-        setIsUploading(false);
-        setUploadSpeed(null);
-        setEstimatedTimeRemaining(null);
-        onUploadComplete({
-          downloadLink: result.downloadLink,
-          emailSent: result.emailSent
-        });
-        
-        // Clear the selected files
-        clearFiles();
-        // Curăță lastTransferId din localStorage
-        localStorage.removeItem('lastTransferId');
-      }, 500);
-      
-    } catch (error) {
-      console.error('Force finalize error:', error);
-      setError(t('errors.uploadError'));
-      setUploading(false);
-      setIsUploading(false);
-      setUploadSpeed(null);
-      setEstimatedTimeRemaining(null);
-    }
-  };
+
   
   const clearFiles = () => {
     setSelectedFiles([]);
@@ -658,23 +515,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {isPasswordRequired && (
-        <div className="bg-gray-500/50 border-l-4 border-green-500 p-4 mb-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-white-700">
-                {t('upload.encryptionPasswordInfo')}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
       <form onSubmit={handleSubmit}>
         <div 
           className={`relative p-8 border-2 border-dashed rounded-xl text-center cursor-pointer transition-all duration-200
@@ -692,13 +532,13 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
                 <div className="mb-1">
                   <div className="flex justify-between text-sm text-white-600 mb-1">
                     <span>{t('upload.overallProgress')}</span>
-                    <span>{uploadProgress}%</span>
-                  </div>
+                  <span>{uploadProgress}%</span>
+                </div>
                   <div className="w-full bg-gray-700 rounded-full h-2.5">
-                    <div 
-                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
-                      style={{ width: `${uploadProgress}%` }}
-                    ></div>
+                  <div 
+                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
                   </div>
                 </div>
                 
@@ -747,22 +587,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
                       ></div>
                     </div>
                   </div>
-                  
-                  {/* Bară de progres pentru etapa de criptare (afișată doar dacă este necesară) */}
-                  {isEncryptionEnabled && (
-                    <div className={`mb-2 ${uploadStage === 'encrypting' ? 'opacity-100' : 'opacity-60'}`}>
-                      <div className="flex justify-between text-xs text-white-400 mb-1">
-                        <span>{t('upload.encryptingFiles')}</span>
-                        <span>{stageProgress.encrypting}%</span>
-                      </div>
-                      <div className="w-full bg-gray-700 rounded-full h-1.5">
-                        <div 
-                          className="bg-purple-500 h-1.5 rounded-full" 
-                          style={{ width: `${stageProgress.encrypting}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
                   
                   {/* Bară de progres pentru etapa de finalizare */}
                   <div className={`${uploadStage === 'completing' ? 'opacity-100' : 'opacity-60'}`}>
@@ -891,7 +715,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
 
             <div className="space-y-1">
               <label htmlFor="password" className="block text-sm font-medium text-indigo-500">
-                {t('upload.password')} {isPasswordRequired && <span className="text-red-500/50">*</span>}
+                {t('upload.password')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -902,19 +726,12 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
                 <input
                   id="password"
                   type="password"
-                  placeholder={isPasswordRequired ? t('errors.passwordRequired') : t('upload.passwordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className={`pl-10 w-full p-2 border ${isPasswordRequired && !password.trim() ? 'border-red-500 bg-red-50' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 hover:border-indigo-500`}
+                  className={`pl-10 w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 hover:border-indigo-500`}
                   disabled={uploading}
-                  required={isPasswordRequired}
                 />
               </div>
-              {isPasswordRequired && (
-                <p className="text-xs text-red-500/50 mt-1">
-                  {t('upload.passwordRequiredNote')}
-                </p>
-              )}
             </div>
 
             <div className="space-y-1">
@@ -955,11 +772,9 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
 
         <button
           type="submit"
-          disabled={uploading || selectedFiles.length === 0 || (isPasswordRequired && !password.trim())}
+          disabled={uploading || selectedFiles.length === 0}
           className={`mt-6 w-full py-3 px-4 rounded-md font-medium text-white flex items-center justify-center
-            ${uploading || selectedFiles.length === 0 || (isPasswordRequired && !password.trim())
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 hover:border-indigo-500'}`}
+            ${uploading || selectedFiles.length === 0 || 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 hover:border-indigo-500'}`}
         >
           {uploading ? (
             <>
@@ -979,6 +794,5 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
           )}
         </button>
       </form>
-    </div>
   );
 } 

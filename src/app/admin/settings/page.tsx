@@ -31,9 +31,6 @@ export default function AdminSettingsPage() {
     language: 'en',
     slideshow_interval: 6000,
     slideshow_effect: 'fade',
-    encryption_enabled: false,
-    encryption_key_source: 'manual',
-    encryption_manual_key: null
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -685,65 +682,6 @@ export default function AdminSettingsPage() {
                     <option value="en">{t('settings.languageEn')}</option>
                   </select>
                   <p className={`mt-1 text-xs ${styles.secondaryText}`}>{t('settings.languageHelp')}</p>
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <h3 className={`text-lg font-medium ${styles.labelText} mb-4`}>{t('settings.encryption')}</h3>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="encryption_enabled"
-                      name="encryption_enabled"
-                      checked={localSettings.encryption_enabled}
-                      onChange={(e) => setLocalSettings({...localSettings, encryption_enabled: e.target.checked})}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="encryption_enabled" className={`ml-2 block text-sm font-medium ${styles.labelText}`}>
-                      {t('settings.encryptionEnable')}
-                    </label>
-                  </div>
-                  
-                  {localSettings.encryption_enabled && (
-                    <>
-                      <div className="mt-4">
-                        <label htmlFor="encryption_key_source" className={`block text-sm font-medium ${styles.labelText}`}>
-                          {t('settings.encryptionKeySource')}
-                        </label>
-                        <select
-                          id="encryption_key_source"
-                          name="encryption_key_source"
-                          value={localSettings.encryption_key_source}
-                          onChange={handleSelectChange}
-                          className={`mt-1 block w-full p-2 border ${styles.border} rounded-md shadow-sm ${styles.input} focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
-                        >
-                          <option value="manual">{t('settings.encryptionKeySourceManual')}</option>
-                          <option value="transfer_name">{t('settings.encryptionKeySourceTransferName')}</option>
-                          <option value="email">{t('settings.encryptionKeySourceEmail')}</option>
-                          <option value="password">{t('settings.encryptionKeySourcePassword')}</option>
-                          <option value="timestamp">{t('settings.encryptionKeySourceTimestamp')}</option>
-                        </select>
-                        <p className={`mt-1 text-xs ${styles.secondaryText}`}>{t('settings.encryptionKeySourceHelp')}</p>
-                      </div>
-
-                      {localSettings.encryption_key_source === 'manual' && (
-                        <div className="mt-4">
-                          <label htmlFor="encryption_manual_key" className={`block text-sm font-medium ${styles.labelText}`}>
-                            {t('settings.encryptionManualKey')}
-                          </label>
-                          <input
-                            type="text"
-                            id="encryption_manual_key"
-                            name="encryption_manual_key"
-                            value={localSettings.encryption_manual_key || ''}
-                            onChange={handleInputChange}
-                            className={`mt-1 block w-full p-2 border ${styles.border} rounded-md shadow-sm ${styles.input} focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
-                            required={localSettings.encryption_key_source === 'manual'}
-                          />
-                          <p className={`mt-1 text-xs ${styles.secondaryText}`}>{t('settings.encryptionManualKeyHelp')}</p>
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
 
                 <div className="pt-4">

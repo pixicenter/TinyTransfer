@@ -37,8 +37,6 @@ interface InitializeRequestBody {
   password?: string;
   expiration?: string;
   email?: string;
-  localEncryption?: boolean;
-  localEncryptionKeySource?: 'transfer_name' | 'timestamp';
 }
 
 export async function POST(req: NextRequest) {
@@ -58,11 +56,13 @@ export async function POST(req: NextRequest) {
     
     // Generează ID-ul transferului bazat pe nume
     const transferId = generateShortId(body.transferName);
+    console.log(transferId);
     
     // Creează directorul temporar pentru acest transfer
     const transferDir = path.join(TMP_DIR, transferId);
     if (!fs.existsSync(transferDir)) {
       fs.mkdirSync(transferDir, { recursive: true });
+      console.log(transferDir);
     }
     
     // Salvează metadata pentru acest transfer
@@ -75,8 +75,6 @@ export async function POST(req: NextRequest) {
       password: body.password || null,
       expiration: body.expiration || '14',
       email: body.email || null,
-      localEncryption: body.localEncryption || false,
-      localEncryptionKeySource: body.localEncryptionKeySource || 'transfer_name',
       createdAt: new Date().toISOString(),
       files: [], // Va fi populat pe măsură ce fișierele sunt încărcate
       uploadedFileCount: 0,

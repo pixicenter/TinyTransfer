@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTransferById, getTransferFiles, recordTransferView, logAccess, getAppSettings } from '../../../../../lib/db';
+import { getTransferById, getTransferFiles, recordTransferView, logAccess} from '../../../../../lib/db';
 
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
@@ -16,10 +16,8 @@ interface AppSettings {
   language: string;
   slideshow_interval: number;
   slideshow_effect: string;
-  encryption_enabled: number | boolean;
-  encryption_key_source: string;
-  encryption_manual_key: string | null;
 }
+
 
 // Add this interface for Transfer
 interface Transfer {
@@ -29,8 +27,6 @@ interface Transfer {
   archive_name: string;
   size_bytes: number;
   transfer_password_hash: string | null;
-  is_encrypted: number | boolean;
-  encryption_key_source: string | null;
 }
 
 // Interfață pentru fișierele transferate
@@ -64,11 +60,8 @@ export async function GET(
     const ip = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
     
-    // Record the view statistics
-    recordTransferView.run(params.id);
-    
-    // Record the access in logs
-    logAccess.run(params.id, ip, userAgent, 0); // 0 = not a download
+    // Record the access in logs (this will also update the view count)
+    logAccess(params.id, ip, userAgent, 0); // 0 = not a download
 
     const files = getTransferFiles.all(params.id) as TransferFile[];
 
@@ -81,8 +74,6 @@ export async function GET(
       expires_at: transfer.expires_at,
       size_bytes: transfer.size_bytes,
       has_password: !!transfer.transfer_password_hash,
-      is_encrypted: !!transfer.is_encrypted,
-      encryption_key_source: transfer.encryption_key_source,
       files: files.map((file: TransferFile) => ({
         original_name: file.original_name,
         size_bytes: file.size_bytes

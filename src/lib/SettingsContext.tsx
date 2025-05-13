@@ -14,9 +14,6 @@ export interface AppSettings {
   language: 'ro' | 'en';
   slideshow_interval: number;
   slideshow_effect: 'fade' | 'slide' | 'zoom';
-  encryption_enabled: boolean;
-  encryption_key_source: 'manual' | 'transfer_name' | 'email' | 'password' | 'timestamp';
-  encryption_manual_key: string | null;
 }
 
 interface SettingsContextType {
@@ -35,10 +32,7 @@ const defaultSettings: AppSettings = {
   theme: 'dark',
   language: 'en',
   slideshow_interval: 6000,
-  slideshow_effect: 'fade',
-  encryption_enabled: false,
-  encryption_key_source: 'manual',
-  encryption_manual_key: null
+  slideshow_effect: 'fade'
 };
 
 const SettingsContext = createContext<SettingsContextType>({
