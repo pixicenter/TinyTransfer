@@ -46,4 +46,7 @@ storage/
 tmp/
 *.zip
 db.sqlite
-/scripts
+scripts/
+scripts/delete-r2-folder.js
+scripts/generate-encryption-keys.js
+scripts/run-cleanup.js
