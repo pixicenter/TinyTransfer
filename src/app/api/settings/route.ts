@@ -20,13 +20,18 @@ interface AppSettings {
 }
 
 // Simple authentication check
-function isAuthenticated() {
-  // Get the cookies
-  const cookieStore = cookies();
-  const authToken = cookieStore.get('auth_token');
-  
-  // Check if the authentication token exists
-  return !!authToken;
+async function isAuthenticated() {
+  try {
+    // Get the cookies (în Next.js 15, cookies() este asincron)
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('auth_token');
+    
+    // Check if the authentication token exists
+    return !!authToken;
+  } catch (error) {
+    console.error('Eroare la verificarea autentificării:', error);
+    return false;
+  }
 }
 
 // GET for getting the current settings - accessible publicly
@@ -70,7 +75,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     // Check if the user is authenticated
-    if (!isAuthenticated()) {
+    if (!await isAuthenticated()) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

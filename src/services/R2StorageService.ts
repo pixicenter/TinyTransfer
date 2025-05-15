@@ -1,10 +1,47 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable, PassThrough } from 'stream';
-import { pipeline } from 'stream/promises';
 import JSZip from 'jszip';
 import { StorageProvider } from './StorageFactory';
 import { EncryptionService } from './EncryptionService';
+
+// Verificăm dacă codul rulează pe server sau pe client
+const isServer = typeof window === 'undefined';
+
+// Implementare simplificată a pipeline-ului care funcționează atât în browser cât și pe server
+const streamPipeline = async (source: NodeJS.ReadableStream, ...destinations: any[]): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    let current = source;
+    
+    // Conectăm stream-urile în serie
+    for (const dest of destinations) {
+      current.pipe(dest);
+      current = dest;
+    }
+    
+    // Configurăm evenimentele pe ultimul stream din lanț
+    const lastDest = destinations[destinations.length - 1];
+    
+    lastDest.on('finish', resolve);
+    lastDest.on('error', (err: Error) => {
+      reject(err);
+    });
+    
+    // Adăugăm handler de eroare pentru sursa inițială
+    source.on('error', (err: Error) => {
+      lastDest.destroy(err);
+      reject(err);
+    });
+    
+    // Adăugăm handler de eroare pentru toate stream-urile intermediare
+    for (let i = 0; i < destinations.length - 1; i++) {
+      destinations[i].on('error', (err: Error) => {
+        lastDest.destroy(err);
+        reject(err);
+      });
+    }
+  });
+};
 
 // Interfața pentru un fișier R2
 interface R2File {
@@ -21,15 +58,18 @@ export class R2StorageService implements StorageProvider {
   private useEncryption: boolean = true; // Flag pentru activarea/dezactivarea criptării
 
   constructor() {
-    // Verificăm dacă avem toate variabilele de mediu necesare
+    // Obținem credențialele din variabilele de mediu
     const accountId = process.env.R2_ACCOUNT_ID;
     const accessKeyId = process.env.R2_ACCESS_KEY_ID;
     const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
     const bucketName = process.env.R2_BUCKET_NAME;
+    
+    // Inițializăm URL-ul public al bucket-ului dacă există
     this.publicUrl = process.env.R2_PUBLIC_URL || null;
-
+    
+    // Verificăm dacă toate credențialele necesare sunt disponibile
     if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
-      console.error('Eroare la inițializarea R2StorageService:');
+      console.error('Credențiale lipsă pentru serviciul R2:');
       console.error(`- R2_ACCOUNT_ID: ${accountId ? 'prezent' : 'lipsește'}`);
       console.error(`- R2_ACCESS_KEY_ID: ${accessKeyId ? 'prezent' : 'lipsește'}`);
       console.error(`- R2_SECRET_ACCESS_KEY: ${secretAccessKey ? 'prezent' : 'lipsește'}`);
@@ -37,9 +77,8 @@ export class R2StorageService implements StorageProvider {
       throw new Error('Lipsesc credențialele R2 necesare. Verificați variabilele de mediu.');
     }
 
-    // console.log(`Inițializare client S3 pentru R2 cu bucket: ${this.bucket}`);
-    // console.log(`Endpoint R2: https://${accountId}.r2.cloudflarestorage.com`);
-
+    console.log(`Inițializare client S3 pentru R2 cu bucket: ${bucketName}`);
+    
     // Inițializăm clientul S3 pentru R2
     this.client = new S3Client({
       region: 'auto',
@@ -53,14 +92,24 @@ export class R2StorageService implements StorageProvider {
     this.bucket = bucketName;
     
     // Inițializăm serviciul de criptare
-    // Cheia și salt-ul pot fi setate prin variabile de mediu
+    // Cheia și salt-ul pot fi setate prin variabilele de mediu
     const encryptionKey = process.env.ENCRYPTION_MASTER_KEY || undefined;
     const encryptionSalt = process.env.ENCRYPTION_SALT || undefined;
-    EncryptionService.initialize(encryptionKey, encryptionSalt);
+    
+    console.log('Chei de criptare disponibile:',
+      `ENCRYPTION_MASTER_KEY=${encryptionKey ? 'setat' : 'nesetat'}`,
+      `ENCRYPTION_SALT=${encryptionSalt ? 'setat' : 'nesetat'}`);
+    
+    const initialized = EncryptionService.initialize(encryptionKey, encryptionSalt);
+    const ready = EncryptionService.isReady();
     
     // Setăm flag-ul de criptare în funcție de variabila de mediu
     this.useEncryption = process.env.USE_ENCRYPTION !== 'false';
-    // console.log(`Criptare fișiere: ${this.useEncryption ? 'activată' : 'dezactivată'}`);
+    
+    console.log(`Stare serviciu criptare în R2StorageService:`, 
+      `useEncryption=${this.useEncryption}`,
+      `initialized=${initialized}`,
+      `isReady=${ready}`);
   }
 
   /**
@@ -88,26 +137,52 @@ export class R2StorageService implements StorageProvider {
       // Pentru fișiere mari, folosim o abordare optimizată
       const isLargeFile = file.size > 5 * 1024 * 1024; // Fișiere peste 5MB
 
-      // Criptăm buffer-ul dacă criptarea este activată
-      if (this.useEncryption && EncryptionService.isReady()) {
-        try {
-          // Pentru fișiere mari, procesăm direct fără logging
-          if (!isLargeFile) {
-            // Criptare cu conversie corectă de tipuri
-            const encryptedBuffer = EncryptionService.encryptBuffer(buffer, transferId);
-            buffer = Buffer.from(encryptedBuffer);
-            isEncrypted = true;
-          } else {
-            // Procesare optimizată pentru fișiere mari
-            const encryptedBuffer = EncryptionService.encryptBuffer(buffer, transferId);
-            buffer = Buffer.from(encryptedBuffer);
-            isEncrypted = true;
-          }
-        } catch (encryptError) {
-          console.error(`Eroare la criptarea fișierului ${file.name}:`, encryptError);
-          // Continuăm cu buffer-ul original necriptat în caz de eroare
+      console.log(`Încărcare fișier ${file.name}: useEncryption=${this.useEncryption}, isReady=${EncryptionService.isReady()}`);
+
+      // Verificarea explicită a stării serviciului de criptare
+      if (this.useEncryption) {
+        if (!EncryptionService.isReady()) {
+          console.log(`Reîncercare inițializare serviciu de criptare pentru ${file.name}...`);
+          
+          // Încercăm să inițializăm serviciul cu cheile din variabilele de mediu
+          const encryptionKey = process.env.ENCRYPTION_MASTER_KEY || undefined;
+          const encryptionSalt = process.env.ENCRYPTION_SALT || undefined;
+          const initialized = EncryptionService.initialize(encryptionKey, encryptionSalt);
+          
+          console.log(`Rezultat reinițializare: ${initialized}, isReady=${EncryptionService.isReady()}`);
         }
+        
+        // Verificăm din nou după încercarea de inițializare
+        if (EncryptionService.isReady()) {
+          try {
+            console.log(`Criptare fișier ${file.name} pentru transferul ${transferId}`);
+            
+            // Criptare unificată pentru toate dimensiunile de fișiere
+            const encryptedBuffer = EncryptionService.encryptBuffer(buffer, transferId);
+            buffer = Buffer.from(encryptedBuffer); // Conversie pentru a rezolva problema de tipuri
+            isEncrypted = true;
+            
+            console.log(`Fișier ${file.name} criptat cu succes (${buffer.length} bytes)`);
+          } catch (encryptError) {
+            console.error(`Eroare la criptarea fișierului ${file.name}:`, encryptError);
+            // Continuăm cu buffer-ul original necriptat în caz de eroare
+          }
+        } else {
+          console.warn(`Serviciul de criptare nu este disponibil pentru fișierul ${file.name}. Se va încărca necriptat.`);
+        }
+      } else {
+        console.log(`Fișierul ${file.name} NU va fi criptat. Criptarea este dezactivată.`);
       }
+
+      // Adăugăm informații detaliate în metadate
+      const metadata: Record<string, string> = {
+        'encrypted': isEncrypted ? 'true' : 'false',
+        'original-size': file.size.toString(),
+        'content-type': file.type || 'application/octet-stream'
+      };
+      
+      // Log detaliat înainte de încărcare
+      console.log(`Încărcare în R2: ${key}, dimensiune=${buffer.length} bytes, criptat=${isEncrypted}`);
 
       const command = new PutObjectCommand({
         Bucket: this.bucket,
@@ -115,14 +190,12 @@ export class R2StorageService implements StorageProvider {
         Body: buffer,
         ContentLength: buffer.length,
         ContentType: file.type,
-        Metadata: {
-          'encrypted': isEncrypted ? 'true' : 'false'
-        }
+        Metadata: metadata
       });
 
       await this.client.send(command);
+      console.log(`Fișier ${file.name} încărcat cu succes în R2`);
       
-      // Log minimal pentru performanță
       return key;
     } catch (error) {
       console.error(`Eroare la încărcarea fișierului în R2: ${file.name}`, error);
@@ -268,7 +341,7 @@ export class R2StorageService implements StorageProvider {
           });
           
           // Pipeline: stream original -> encryptStream -> encryptedStream
-          pipeline(stream, encryptStream, encryptedStream).catch(err => {
+          streamPipeline(stream, encryptStream, encryptedStream).catch((err: Error) => {
             // console.error(`Eroare în pipeline de criptare pentru ${key}:`, err);
             encryptedStream.destroy(err);
           });
@@ -354,7 +427,7 @@ export class R2StorageService implements StorageProvider {
           });
           
           // Pipeline: stream original -> decryptStream -> finalStream
-          pipeline(stream, decryptStream, finalStream).catch(err => {
+          streamPipeline(stream, decryptStream, finalStream).catch((err: Error) => {
             console.error(`Eroare în pipeline de decriptare pentru ${fileName}:`, err);
             finalStream.destroy(err);
           });
@@ -795,20 +868,167 @@ export class R2StorageService implements StorageProvider {
    */
   async uploadObject(key: string, data: Buffer | Uint8Array, contentType: string = 'application/octet-stream'): Promise<void> {
     try {
-      // console.log(`Încărcare obiect în R2: ${key} (${data.byteLength} bytes)`);
-      
       const command = new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: data,
-        ContentLength: data.byteLength,
         ContentType: contentType
       });
 
       await this.client.send(command);
-      // console.log(`Obiect încărcat cu succes în R2: ${key}`);
     } catch (error) {
-      console.error(`Eroare la încărcarea obiectului în R2: ${key}`, error);
+      console.error(`Error uploading object ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Încarcă un buffer în R2 și returnează cheia
+   * @param key Cheia unde va fi stocat obiectul
+   * @param buffer Buffer-ul pentru încărcare
+   * @param contentType Tipul de conținut (opțional)
+   * @returns Cheia unde a fost stocat obiectul
+   */
+  async uploadBuffer(key: string, buffer: Buffer, contentType: string = 'application/octet-stream'): Promise<string> {
+    try {
+      const metadata: Record<string, string> = {
+        'encrypted': 'true',
+        'original-size': buffer.length.toString()
+      };
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentLength: buffer.length,
+        ContentType: contentType,
+        Metadata: metadata
+      });
+
+      await this.client.send(command);
+      return key;
+    } catch (error) {
+      console.error(`Eroare la încărcarea buffer-ului în R2: ${key}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Inițiază o încărcare multipart pentru fișierele mari
+   * @param key Cheia unde va fi stocat obiectul
+   * @returns ID-ul încărcării multipart
+   */
+  async initMultipartUpload(key: string): Promise<string> {
+    try {
+      const command = new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Metadata: {
+          'encrypted': 'true'
+        }
+      });
+
+      const response = await this.client.send(command);
+      if (!response.UploadId) {
+        throw new Error('Nu s-a putut inițializa încărcarea multipart');
+      }
+      return response.UploadId;
+    } catch (error) {
+      console.error(`Eroare la inițierea încărcării multipart pentru ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Încarcă o parte a unui fișier în cadrul unei încărcări multipart
+   * @param key Cheia obiectului
+   * @param uploadId ID-ul încărcării multipart
+   * @param partNumber Numărul părții (indexat de la 1)
+   * @param buffer Datele de încărcat
+   * @returns ETag-ul părții încărcate
+   */
+  async uploadPart(key: string, uploadId: string, partNumber: number, buffer: Buffer): Promise<string> {
+    try {
+      const command = new UploadPartCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+        Body: buffer
+      });
+
+      const response = await this.client.send(command);
+      if (!response.ETag) {
+        throw new Error(`Nu s-a putut încărca partea ${partNumber}`);
+      }
+      return response.ETag;
+    } catch (error) {
+      console.error(`Eroare la încărcarea părții ${partNumber} pentru ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Finalizează o încărcare multipart
+   * @param key Cheia obiectului
+   * @param uploadId ID-ul încărcării multipart
+   * @param parts Lista de părți încărcate cu ETag-urile lor
+   * @returns Cheia obiectului finalizat
+   */
+  async completeMultipartUpload(
+    key: string,
+    uploadId: string,
+    parts: { PartNumber: number; ETag: string }[]
+  ): Promise<string> {
+    try {
+      // Sortăm părțile după număr pentru a ne asigura că sunt în ordine
+      const sortedParts = [...parts].sort((a, b) => a.PartNumber - b.PartNumber);
+      
+      const command = new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: sortedParts
+        }
+      });
+
+      const response = await this.client.send(command);
+      if (!response.Key) {
+        throw new Error('Nu s-a putut finaliza încărcarea multipart');
+      }
+      return response.Key;
+    } catch (error) {
+      console.error(`Eroare la finalizarea încărcării multipart pentru ${key}:`, error);
+      
+      // Încercăm să anulăm încărcarea multipart pentru a elibera resursele
+      try {
+        await this.abortMultipartUpload(key, uploadId);
+      } catch (abortError) {
+        console.error(`Nu s-a putut anula încărcarea multipart pentru ${key}:`, abortError);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Anulează o încărcare multipart în curs
+   * @param key Cheia obiectului
+   * @param uploadId ID-ul încărcării multipart
+   */
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    try {
+      const command = new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId
+      });
+
+      await this.client.send(command);
+      console.log(`Încărcarea multipart pentru ${key} a fost anulată cu succes`);
+    } catch (error) {
+      console.error(`Eroare la anularea încărcării multipart pentru ${key}:`, error);
       throw error;
     }
   }

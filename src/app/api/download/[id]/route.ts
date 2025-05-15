@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTransfer, updateDownloadStats, recordTransferDownload, insertAccessLog } from '../../../../lib/db';
+import { getTransfer, logAccess } from '../../../../lib/db';
 import bcrypt from 'bcrypt';
 import { R2StorageService } from '../../../../services/R2StorageService';
 import archiver from 'archiver';
@@ -32,9 +32,9 @@ interface Transfer {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
-  const id = params.id;
+  const id = context.params.id;
   try {
     // Verificăm dacă transferul există în baza de date
     const transfer = getTransfer.get(id) as Transfer;
@@ -289,11 +289,9 @@ export async function GET(
       
       // Înregistrăm descărcarea în statistici
       try {
-        updateDownloadStats.run(id);
-        recordTransferDownload.run(id);
-        
-        // Înregistrăm IP-ul și user agent-ul separat
-        insertAccessLog.run(id, getClientIp(req.headers), req.headers.get('user-agent') || 'unknown', 1); // 1 = este descărcare
+        // În loc de cele trei apeluri separate, folosim funcția helper logAccess
+        // care se ocupă de toate operațiile necesare
+        logAccess(id, getClientIp(req.headers), req.headers.get('user-agent') || 'unknown', 1); // 1 = este descărcare
       } catch (statsError) {
         console.error('Eroare la înregistrarea statisticilor:', statsError);
       }
@@ -321,9 +319,9 @@ export async function GET(
 // Endpoint pentru verificarea parolei înainte de descărcare
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
-  const id = params.id;
+  const id = context.params.id;
   
   try {
     // Verificăm dacă transferul există în baza de date

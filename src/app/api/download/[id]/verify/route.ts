@@ -13,9 +13,9 @@ interface Transfer {
   transfer_password_hash: string | null;
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: any) {
   try {
-    const transfer = getTransferById.get(params.id) as Transfer;
+    const transfer = getTransferById.get(context.params.id) as Transfer;
     if (!transfer) {
       return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
     }

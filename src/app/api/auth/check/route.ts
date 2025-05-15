@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Obtain the authentication cookie
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const authToken = cookieStore.get('auth_token');
     
     // Check if the token exists

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocale } from '../lib/LocaleContext';
 import { useSettings } from '../lib/SettingsContext';
+import { UploadService, UploadProgress } from '../services/UploadService';
 
 interface UploadFormProps {
   onUploadComplete: (data: { downloadLink: string, emailSent?: boolean }) => void;
@@ -177,39 +178,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
   
-  // Funcție pentru a încărca un lot de fișiere
-  const uploadBatch = async (transferId: string, batchFiles: File[]): Promise<number> => {
-    const batchData = new FormData();
-    
-    // Adaugă ID-ul transferului
-    batchData.append('transferId', transferId);
-    
-    // Adaugă fișierele din acest lot
-    for (const file of batchFiles) {
-      batchData.append('files', file);
-    }
-    
-    // Upload the batch
-    const batchResponse = await fetch(`/api/upload/batch`, {
-      method: 'POST',
-      body: batchData,
-    });
-    
-    if (!batchResponse.ok) {
-      throw new Error(`Failed to upload batch: ${batchResponse.statusText}`);
-    }
-    
-    const batchResult = await batchResponse.json();
-    
-    // Folosim numărul real de fișiere procesate din răspunsul API-ului
-    if (batchResult.processedFiles !== undefined) {
-      return batchResult.processedFiles;
-    }
-    
-    // Cădem înapoi la lungimea lotului dacă răspunsul nu conține processedFiles
-    return batchFiles.length;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -245,21 +213,7 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
     totalUploadSizeRef.current = getTotalSize();
     
     try {
-      // Create a new FormData object
-      const formData = new FormData();
-      
-      // Add metadata fields
-      formData.append('password', password);
-      formData.append('expiration', expiration);
-      formData.append('transferName', transferName.trim() || t('upload.title'));
-      // Add the email to formData if it exists
-      if (email) {
-        formData.append('email', email);
-      }
-      
-      
       // Configurare pentru încărcarea în loturi
-      const MAX_BATCH_SIZE = UPLOAD_SETTINGS.MAX_BATCH_SIZE;
       const MAX_CONCURRENT_REQUESTS = UPLOAD_SETTINGS.MAX_CONCURRENT_REQUESTS;
       
       let transferId: string | null = null;
@@ -300,9 +254,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
       
       // Optimizare: pre-încărcăm cheia de criptare pentru acest transfer
       try {
-        // Folosim un serviciu de criptare optimizat (dacă este disponibil)
-        // Este necesar să facem acest lucru în try/catch pentru că apelul către API
-        // poate eșua dacă serviciul nu este disponibil în browser
         await fetch(`/api/upload/prepare-encryption`, {
           method: 'POST',
           headers: {
@@ -314,78 +265,32 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         });
       } catch (error) {
         // Ignorăm eroarea dacă preîncărcarea nu este disponibilă
-        // console.log('Preîncărcarea cheii de criptare nu este disponibilă');
+        console.log('Preîncărcarea cheii de criptare nu este disponibilă');
       }
       
-      // Pregătește loturi de fișiere
-      const batches: File[][] = [];
-      for (let i = 0; i < selectedFiles.length; i += MAX_BATCH_SIZE) {
-        batches.push(selectedFiles.slice(i, Math.min(i + MAX_BATCH_SIZE, selectedFiles.length)));
-      }
-      
-      // Funcție pentru procesarea loturilor în paralel, menținând constant numărul de cereri simultane
-      const processAllBatches = async () => {
-        const results: number[] = [];
-        let completedBatches = 0;
-        
-        // Pregătește o coadă cu toate batchurile
-        const batchQueue = [...batches];
-        
-        // Funcție pentru procesarea unui singur batch din coadă
-        const processNextBatch = async () => {
-          if (batchQueue.length === 0) return;
+      // Inițializăm serviciul de upload cu callback pentru progres
+      const uploadService = new UploadService(transferId, (progress: UploadProgress) => {
+        // Actualizăm progresul pentru fișierul curent
+        if (progress.isComplete) {
+          uploadedFiles++;
+          setProcessedFiles(uploadedFiles);
           
-          // Ia următorul batch din coadă
-          const currentBatch = batchQueue.shift()!;
-          const batchIndex = batches.indexOf(currentBatch);
-          
-          try {
-            // Procesează batchul
-            const filesProcessed = await uploadBatch(transferId!, currentBatch);
-            
-            // Actualizează progresul
-            uploadedFiles += filesProcessed;
-            setProcessedFiles(uploadedFiles);
-            
-            // Actualizare progres pentru etapa de upload
-            const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
-            updateStageProgress('uploading', uploadingProgress);
-            
-            // Adaugă rezultatul
-            results.push(filesProcessed);
-            completedBatches++;
-            
-            // Dacă mai sunt batchuri în coadă, procesează următorul
-            if (batchQueue.length > 0) {
-              return processNextBatch();
-            }
-          } catch (error) {
-            console.error(`Eroare la procesarea batchului ${batchIndex}:`, error);
-            throw error;
-          }
-        };
-        
-        // Pornește maxim MAX_CONCURRENT_REQUESTS lucrători în paralel
-        const workers = [];
-        const workerCount = Math.min(MAX_CONCURRENT_REQUESTS, batchQueue.length);
-        
-        for (let i = 0; i < workerCount; i++) {
-          workers.push(processNextBatch());
+          // Actualizare progres pentru etapa de upload
+          const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
+          updateStageProgress('uploading', uploadingProgress);
         }
-        
-        // Așteaptă ca toți lucrătorii să termine
-        await Promise.all(workers);
-        
-        // Verifică dacă toate batchurile au fost procesate
-        if (completedBatches !== batches.length) {
-          console.warn(`Avertisment: S-au finalizat doar ${completedBatches} din ${batches.length} batchuri`);
-        }
-        
-        return results;
-      };
+      });
       
-      // Procesează toate loturile
-      await processAllBatches();
+      // Încărcăm toate fișierele utilizând serviciul de upload
+      const uploadResults = await uploadService.uploadFiles(selectedFiles, MAX_CONCURRENT_REQUESTS);
+      
+      // Verificăm rezultatele și numărăm fișierele încărcate cu succes
+      uploadedFiles = uploadResults.filter(result => result.success).length;
+      setProcessedFiles(uploadedFiles);
+      
+      // Actualizăm progresul la valoarea finală
+      const uploadingProgress = Math.round((uploadedFiles / selectedFiles.length) * 100);
+      updateStageProgress('uploading', uploadingProgress);
       
       // Verificăm starea finală a transferului pentru a asigura actualizarea corectă a contorului
       try {
@@ -402,16 +307,23 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
           if (statusData.uploadedFileCount && statusData.uploadedFileCount !== uploadedFiles) {
-            // console.log(`Actualizare contor fișiere procesate: ${uploadedFiles} -> ${statusData.uploadedFileCount}`);
+            console.log(`Actualizare contor fișiere procesate: ${uploadedFiles} -> ${statusData.uploadedFileCount}`);
             uploadedFiles = statusData.uploadedFileCount;
             setProcessedFiles(uploadedFiles);
             
-            const uploadingProgress = Math.min(100, Math.round((uploadedFiles / selectedFiles.length) * 100));
-            updateStageProgress('uploading', uploadingProgress);
+            const updatedUploadingProgress = Math.min(100, Math.round((uploadedFiles / selectedFiles.length) * 100));
+            updateStageProgress('uploading', updatedUploadingProgress);
           }
         }
       } catch (error) {
         console.warn('Nu s-a putut verifica starea transferului:', error);
+      }
+      
+      // Verificăm dacă toate fișierele au fost încărcate cu succes
+      const failedUploads = uploadResults.filter(result => !result.success);
+      if (failedUploads.length > 0) {
+        console.warn(`${failedUploads.length} fișiere nu au putut fi încărcate:`, 
+          failedUploads.map(f => f.name).join(', '));
       }
       
       // Etapa de arhivare
@@ -464,9 +376,6 @@ export default function UploadForm({ onUploadComplete }: UploadFormProps) {
         }
         throw finalizeError; // Reluăm eroarea pentru a fi gestionată de catch-ul extern
       }
-      
-      // Arhivarea s-a terminat
-      updateStageProgress('archiving', 100);
       
       
       // Etapa de finalizare

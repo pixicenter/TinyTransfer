@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createTransfer, getTransferById, initTransferStats } from '../../../../lib/db';
 import { StorageFactory } from '../../../../services/StorageFactory';
+import { initializeServices } from '../../../../lib/app-init';
+import { EncryptionService } from '../../../../services/EncryptionService';
 
 
 // Această rută trebuie să ruleze pe Node.js și nu pe Edge Runtime
@@ -18,6 +20,12 @@ interface Transfer {
 
 export async function POST(request: NextRequest) {
   try {
+    // Încercăm să inițializăm serviciile dacă nu sunt deja inițializate
+    if (!EncryptionService.isReady()) {
+      console.log('Serviciul de criptare nu este inițializat. Încercăm inițializarea...');
+      initializeServices();
+    }
+    
     const { transferId, archiveName, expiresAt, password } = await request.json();
 
     if (!transferId) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { EncryptionService } from '../../../../services/EncryptionService';
+import { initializeServices } from '../../../../lib/app-init';
 
 // Această rută trebuie să ruleze pe Node.js și nu pe Edge Runtime
 export const runtime = 'nodejs';
@@ -14,8 +15,15 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verificăm dacă serviciul de criptare este disponibil
+    // Încercăm să inițializăm serviciile dacă nu sunt deja inițializate
     if (!EncryptionService.isReady()) {
+      console.log('Serviciul de criptare nu este inițializat. Încercăm inițializarea...');
+      initializeServices();
+    }
+    
+    // Verificăm dacă serviciul de criptare este disponibil după tentativa de inițializare
+    if (!EncryptionService.isReady()) {
+      console.error('Serviciul de criptare nu a putut fi inițializat');
       return NextResponse.json(
         { error: 'Serviciul de criptare nu este disponibil' },
         { status: 503 }

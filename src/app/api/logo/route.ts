@@ -22,13 +22,18 @@ const ALLOWED_TYPES = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp']
 const ALLOWED_EXTENSIONS = ['.png', '.svg', '.jpg', '.jpeg', '.webp'];
 
 // Simple authentication check
-function isAuthenticated() {
-  // Get the cookies
-  const cookieStore = cookies();
-  const authToken = cookieStore.get('auth_token');
-  
-  // Check if the authentication token exists
-  return !!authToken;
+async function isAuthenticated() {
+  try {
+    // Get the cookies (în Next.js 15, cookies() este asincron)
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('auth_token');
+    
+    // Check if the authentication token exists
+    return !!authToken;
+  } catch (error) {
+    console.error('Eroare la verificarea autentificării:', error);
+    return false;
+  }
 }
 
 // Helper for downloading files from URLs
@@ -82,7 +87,7 @@ function getFileExtensionFromUrl(url: string, contentType: string | null): strin
 export async function POST(request: NextRequest) {
   try {
     // Check if the request is authenticated  
-    if (!isAuthenticated()) {
+    if (!await isAuthenticated()) {
       console.error('Unauthorized request for logo upload');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -234,7 +239,7 @@ export async function DELETE(request: NextRequest) {
     // console.log('Processing logo delete request');
     
     // Check if the request is authenticated
-    if (!isAuthenticated()) {
+    if (!await isAuthenticated()) {
       console.error('Unauthorized request for logo deletion');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

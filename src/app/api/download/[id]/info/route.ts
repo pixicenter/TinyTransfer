@@ -4,8 +4,6 @@ import { getTransferById, getTransferFiles, logAccess} from '../../../../../lib/
 // This route needs to run on Node.js and not on Edge Runtime
 export const runtime = 'nodejs';
 
-
-
 // Add this interface for Transfer
 interface Transfer {
   id: string;
@@ -24,10 +22,12 @@ interface TransferFile {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
   try {
-    const transfer = getTransferById.get(params.id) as Transfer;
+    // Folosim any pentru context pentru a evita problemele de tipuri
+    const id = context.params.id;
+    const transfer = getTransferById.get(id) as Transfer;
     if (!transfer) {
       return NextResponse.json(
         { error: 'Transfer not found' },
@@ -44,13 +44,15 @@ export async function GET(
     }
 
     // Record the view statistics
-    const ip = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    const ip = request.headers.get('x-forwarded-for') || 
+               request.headers.get('x-real-ip') || 
+               'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
     
     // Record the access in logs (this will also update the view count)
-    logAccess(params.id, ip, userAgent, 0); // 0 = not a download
+    logAccess(id, ip, userAgent, 0); // 0 = not a download
 
-    const files = getTransferFiles.all(params.id) as TransferFile[];
+    const files = getTransferFiles.all(id) as TransferFile[];
 
     // Then type the result
     // const appSettings = getAppSettings.get() as AppSettings;

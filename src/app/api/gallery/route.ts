@@ -21,13 +21,18 @@ if (!fs.existsSync(GALLERY_PATH)) {
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 // Simple authentication check
-function isAuthenticated(request: NextRequest) {
-  // Get the cookies
-  const cookieStore = cookies();
-  const authToken = cookieStore.get('auth_token');
-  
-  // Check if the authentication token exists
-  return !!authToken;
+async function isAuthenticated(request: NextRequest) {
+  try {
+    // Get the cookies (în Next.js 15, cookies() este asincron)
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('auth_token');
+    
+    // Check if the authentication token exists
+    return !!authToken;
+  } catch (error) {
+    console.error('Eroare la verificarea autentificării:', error);
+    return false;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -86,7 +91,7 @@ export async function GET(request: NextRequest) {
     // Return all images for administration
     if (mode === 'admin') {
       // For admin, check the authentication
-      if (!isAuthenticated(request)) {
+      if (!await isAuthenticated(request)) {
         console.error('Unauthorized request for admin gallery');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
@@ -130,7 +135,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Check if the request is authenticated
-    if (!isAuthenticated(request)) {
+    if (!await isAuthenticated(request)) {
       console.error('Unauthorized request for image upload');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -180,7 +185,7 @@ export async function DELETE(request: NextRequest) {
     // console.log('Processing DELETE request for image');
     
     // Check if the request is authenticated
-    if (!isAuthenticated(request)) {
+    if (!await isAuthenticated(request)) {
       console.error('Unauthorized request for image deletion');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

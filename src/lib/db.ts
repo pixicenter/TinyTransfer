@@ -144,7 +144,14 @@ export const updateTransferStats = db.prepare(`
 // Funcție helper pentru a înregistra accesul și a actualiza statisticile
 export function logAccess(transferId: string, ip: string, userAgent: string, isDownload: number) {
   insertAccessLog.run(transferId, ip, userAgent, isDownload);
-  updateTransferStats.run(transferId);
+  
+  if (isDownload === 1) {
+    // Dacă este descărcare, actualizează statisticile de descărcare
+    recordTransferDownload.run(transferId);
+  } else {
+    // Dacă este doar vizualizare, actualizează statisticile de vizualizare
+    updateTransferStats.run(transferId);
+  }
 }
 
 export const updateEmailStatus = db.prepare(`

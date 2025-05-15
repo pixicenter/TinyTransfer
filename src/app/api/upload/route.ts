@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { StorageFactory } from '../../../services/StorageFactory';
+import { initializeServices } from '../../../lib/app-init';
+import { EncryptionService } from '../../../services/EncryptionService';
 
 
 // Această rută trebuie să ruleze pe Node.js și nu pe Edge Runtime
@@ -7,6 +9,12 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    // Încercăm să inițializăm serviciile dacă nu sunt deja inițializate
+    if (!EncryptionService.isReady()) {
+      console.log('Serviciul de criptare nu este inițializat. Încercăm inițializarea...');
+      initializeServices();
+    }
+    
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const transferId = formData.get('transferId') as string;

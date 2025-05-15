@@ -19,6 +19,7 @@
 .DS_Store
 *.pem
 Thumbs.db
+.env
 
 # debug
 npm-debug.log*
@@ -45,3 +46,4 @@ storage/
 tmp/
 *.zip
 db.sqlite
+/scripts

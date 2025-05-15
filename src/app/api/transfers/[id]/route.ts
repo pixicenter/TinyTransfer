@@ -17,10 +17,10 @@ interface File {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
   try {
-    const transferId = params.id;
+    const transferId = context.params.id;
     // console.log(`Cerere informații pentru transferul ${transferId}`);
 
     // Obținem transferul din bază

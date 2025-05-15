@@ -20,6 +20,15 @@ export interface StorageProvider {
   createArchive(transferId: string): Promise<string>;
   getSignedUrl(key: string, expiresIn?: number): Promise<string>;
   getSignedUrlWithCustomFilename(key: string, filename: string, expiresIn?: number): Promise<string>;
+  // Metode multipart upload - opționale pentru unele implementări
+  initMultipartUpload?(key: string): Promise<string>;
+  uploadPart?(key: string, uploadId: string, partNumber: number, buffer: Buffer): Promise<string>;
+  completeMultipartUpload?(
+    key: string, 
+    uploadId: string, 
+    parts: { PartNumber: number; ETag: string }[]
+  ): Promise<string>;
+  abortMultipartUpload?(key: string, uploadId: string): Promise<void>;
 }
 
 export class StorageFactory {

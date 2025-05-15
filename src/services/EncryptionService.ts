@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Transform } from 'stream';
-import fs from 'fs';
-import path from 'path';
+
+// Verificăm dacă codul rulează pe server sau pe client
+const isServer = typeof window === 'undefined';
 
 /**
  * Serviciu pentru criptarea și decriptarea fișierelor în iTransfer
@@ -26,9 +27,6 @@ export class EncryptionService {
   // Lungimea tag-ului de autentificare pentru AES-GCM (nu e folosit în cazul CBC)
   private static readonly TAG_LENGTH = 16;
   
-  // Calea către fișierul de salt
-  private static readonly SALT_FILE_PATH = path.join(process.cwd(), 'data', 'encryption_salt.bin');
-
   // Cache pentru cheile derivate - îmbunătățește performanța
   private static keyCache: Map<string, Buffer> = new Map();
 
@@ -60,15 +58,30 @@ export class EncryptionService {
       } else {
         // Generăm o cheie aleatoare de 32 bytes (256 biți)
         this.masterKey = crypto.randomBytes(32);
-        // console.log('Cheie de criptare generată automat:', this.masterKey.toString('hex'));
       }
 
-      // Încărcăm salt-ul din una din sursele disponibile
-      this.keySalt = this.loadOrCreateSalt(saltString);
+      // Încărcăm salt-ul
+      if (saltString) {
+        try {
+          // Verificăm dacă string-ul este un hex valid și are lungimea corectă
+          if (/^[0-9a-f]{32}$/i.test(saltString)) {
+            this.keySalt = Buffer.from(saltString, 'hex');
+          } else {
+            throw new Error('Formatul salt-ului furnizat este invalid (trebuie să fie 32 de caractere hex)');
+          }
+        } catch (error) {
+          console.error('Eroare la parsarea salt-ului din string:', error);
+          // Generăm un salt nou în caz de eroare
+          this.keySalt = crypto.randomBytes(this.SALT_LENGTH);
+        }
+      } else {
+        // Generăm un salt nou
+        this.keySalt = crypto.randomBytes(this.SALT_LENGTH);
+        console.log('Salt nou generat pentru criptare');
+      }
       
       this.isInitialized = true;
       console.log('EncryptionService inițializat cu succes');
-      // console.log(`Salt folosit pentru derivarea cheii: ${this.keySalt?.toString('hex')}`);
       
       // Resetăm cache-ul de chei
       this.keyCache.clear();
@@ -77,99 +90,6 @@ export class EncryptionService {
     } catch (error) {
       console.error('Eroare la inițializarea EncryptionService:', error);
       return false;
-    }
-  }
-  
-  /**
-   * Încarcă salt-ul din variabila de mediu, fișier, sau creează unul nou
-   * @param saltString Salt-ul în format hex string (opțional)
-   * @returns Buffer cu salt-ul
-   */
-  private static loadOrCreateSalt(saltString?: string): Buffer {
-    try {
-      // 1. Încercăm să folosim saltString dacă este furnizat
-      if (saltString) {
-        try {
-          // Verificăm dacă string-ul este un hex valid și are lungimea corectă
-          if (/^[0-9a-f]{32}$/i.test(saltString)) {
-            // console.log('Salt încărcat din parametrul furnizat');
-            return Buffer.from(saltString, 'hex');
-          } else {
-            throw new Error('Formatul salt-ului furnizat este invalid (trebuie să fie 32 de caractere hex)');
-          }
-        } catch (error) {
-          console.error('Eroare la parsarea salt-ului din string:', error);
-          // Continuăm cu următoarea metodă dacă aceasta eșuează
-        }
-      }
-      
-      // 2. Încercăm să folosim variabila de mediu ENCRYPTION_SALT
-      const envSalt = process.env.ENCRYPTION_SALT;
-      if (envSalt) {
-        try {
-          // Verificăm dacă string-ul este un hex valid și are lungimea corectă
-          if (/^[0-9a-f]{32}$/i.test(envSalt)) {
-            // console.log('Salt încărcat din variabila de mediu ENCRYPTION_SALT');
-            return Buffer.from(envSalt, 'hex');
-          } else {
-            console.warn('Formatul salt-ului din variabila de mediu este invalid (trebuie să fie 32 de caractere hex)');
-            // Continuăm cu următoarea metodă
-          }
-        } catch (error) {
-          console.error('Eroare la parsarea salt-ului din variabila de mediu:', error);
-          // Continuăm cu următoarea metodă
-        }
-      }
-      
-      // 3. Încercăm să încărcăm din fișierul de salt (pentru compatibilitate)
-      // Asigură-te că directorul data există
-      const dataDir = path.dirname(this.SALT_FILE_PATH);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      
-      if (fs.existsSync(this.SALT_FILE_PATH)) {
-        try {
-          const salt = fs.readFileSync(this.SALT_FILE_PATH);
-          // console.log('Salt încărcat din fișierul existent');
-          
-          // Opțional: Salvăm salt-ul în variabila de mediu pentru viitoare inițializări
-          if (process.env.NODE_ENV === 'development') {
-            console.log('RECOMANDARE: Setați următoarea variabilă în .env.local pentru a evita folosirea fișierului de salt:');
-            // console.log(`ENCRYPTION_SALT="${salt.toString('hex')}"`);
-          }
-          
-          return salt;
-        } catch (error) {
-          console.error('Eroare la citirea fișierului de salt:', error);
-          // Continuăm cu generarea unui salt nou
-        }
-      }
-      
-      // 4. Generăm un salt nou
-      const newSalt = crypto.randomBytes(this.SALT_LENGTH);
-      console.log('Salt nou generat');
-      
-      // Salvăm salt-ul în fișier pentru compatibilitate
-      try {
-        fs.writeFileSync(this.SALT_FILE_PATH, newSalt);
-        console.log('Salt nou salvat în fișier');
-      } catch (error) {
-        console.warn('Nu s-a putut salva salt-ul în fișier:', error);
-      }
-      
-      // Afișăm recomandarea pentru setarea variabilei de mediu
-      if (process.env.NODE_ENV === 'development') {
-        // console.log('IMPORTANT: Copiați acest salt în variabila de mediu pentru consistență între reporniri:');
-        // console.log(`ENCRYPTION_SALT="${newSalt.toString('hex')}"`);
-      }
-      
-      return newSalt;
-    } catch (error) {
-      console.error('Eroare critică la încărcarea/crearea salt-ului:', error);
-      // În caz de eroare, generăm un salt temporar în memorie
-      console.warn('Se folosește un salt temporar în memorie - decriptarea nu va fi persistentă între reporniri!');
-      return crypto.randomBytes(this.SALT_LENGTH);
     }
   }
 
@@ -259,29 +179,40 @@ export class EncryptionService {
    */
   static encryptBuffer(data: Buffer, transferId: string): Buffer {
     if (!this.isReady()) {
+      console.error(`EncryptionService nu este inițializat pentru transferul ${transferId}`);
       throw new Error('EncryptionService nu este inițializat');
     }
 
     try {
+      console.log(`Începere criptare pentru transferul ${transferId}, dimensiune date: ${data.length} bytes`);
+      
       // Derivăm cheia specifică pentru acest transfer
       const key = this.deriveKeyForTransfer(transferId);
+      console.log(`Cheie derivată pentru transferul ${transferId}, lungime: ${key.length} bytes`);
       
       // Generăm un IV (Initialization Vector) aleator pentru fiecare operațiune de criptare
       const iv = crypto.randomBytes(this.IV_LENGTH);
+      console.log(`IV generat pentru criptare: ${iv.toString('hex')}`);
       
       // Creăm un cifru AES-256-CBC
       const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
       
       // Criptăm datele
-      const encryptedData = Buffer.concat([
-        cipher.update(data),
-        cipher.final()
-      ]);
+      const encrypted = cipher.update(data);
+      console.log(`Date criptate parțial, dimensiune: ${encrypted.length} bytes`);
+      
+      const final = cipher.final();
+      console.log(`Finalizare criptare, dimensiune finală: ${final.length} bytes`);
+      
+      const encryptedData = Buffer.concat([encrypted, final]);
       
       // Adăugăm IV la începutul datelor criptate pentru a-l avea la decriptare
-      return Buffer.concat([iv, encryptedData]);
+      const result = Buffer.concat([iv, encryptedData]);
+      console.log(`Criptare finalizată pentru transferul ${transferId}, dimensiune totală: ${result.length} bytes (include IV)`);
+      
+      return result;
     } catch (error: any) {
-      // console.error(`Eroare la criptarea buffer-ului pentru transferul ${transferId}:`, error);
+      console.error(`Eroare la criptarea buffer-ului pentru transferul ${transferId}:`, error);
       throw error;
     }
   }
